@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<link rel="icon" href="data:," />
+<title>RC-2 MIC</title>
+<link rel="stylesheet" href="instrument.css" />
+</head>
+<body>
+<div class="device">
+  <section class="mod">
+    <div class="head">
+      <div>
+        <div class="brand">RETRO CACHE</div>
+        <a class="model" href="index.html">RC-2 · MIC · PCM · 10 S PRE-ROLL</a>
+      </div>
+      <div class="leds">
+        <span class="led" id="stbyLed"><i></i>STBY</span>
+        <span class="led rec" id="recLed"><i></i>REC</span>
+      </div>
+    </div>
+    <canvas id="liveView" class="screen" width="480" height="130"></canvas>
+    <div class="bars">
+      <div class="bar"><span>RING</span><canvas id="ringBar" width="240" height="12"></canvas></div>
+      <div class="bar"><span>QUEUE</span><canvas id="queueBar" width="240" height="12"></canvas></div>
+      <div class="bar"><span>LEVEL</span><canvas id="levelBar" width="240" height="12"></canvas></div>
+    </div>
+    <div class="lcds">
+      <div class="lcd"><label>LOOK S</label><b id="lookLcd">0.0</b></div>
+      <div class="lcd"><label>RATE HZ</label><b id="rateLcd">--</b></div>
+      <div class="lcd"><label>PERS</label><b id="persLcd">0</b></div>
+      <div class="lcd"><label>DROP</label><b id="dropLcd">0</b></div>
+      <div class="lcd wide"><label>STATUS</label><b id="errLcd">READY</b></div>
+    </div>
+    <div class="keys">
+      <button class="key armk" id="armBtn">ARM</button>
+      <button class="key trig" id="trigBtn" disabled>TRIG</button>
+      <button class="key" id="stopBtn" disabled>STOP</button>
+    </div>
+  </section>
+
+  <section class="mod">
+    <canvas id="waveView" class="screen" width="480" height="130"></canvas>
+    <div class="row">
+      <button class="key small" id="playBtn" disabled>PLAY</button>
+      <button class="key small" id="wavBtn" disabled>WAV</button>
+      <div class="lcd" style="flex:1"><label>TAKE S</label><b id="takeLcd">--</b></div>
+      <div class="lcd" style="flex:1"><label>PRE S</label><b id="preLcd">--</b></div>
+    </div>
+    <div class="legend">
+      <span><span class="chip" style="background:var(--cache)"></span>CACHE</span>
+      <span><span class="chip" style="background:var(--live)"></span>LIVE</span>
+      <span><span class="chip" style="background:#ff3b3b"></span>GAP</span>
+    </div>
+  </section>
+</div>
+
+<script type="module">
+import { RetroCaptureEngine, MemorySink, State } from './retrocache.js';
+import { makeTimestamper, encodeWav, download } from './demo-ui.js';
+import { wirePanel, wireTransport, drawSegments } from './instrument.js';
+
+const CHUNK = 2048, PREROLL_S = 10;
+const $ = (id) => document.getElementById(id);
+
+const live = $('liveView'); const lctx = live.getContext('2d');
+const wave = $('waveView'); const wctx = wave.getContext('2d');
+
+let audioCtx = null, engine = null, level = 0;
+const sink = new MemorySink();
+const now = makeTimestamper();
+const payload = new Uint8Array(CHUNK * 2);
+const payloadI16 = new Int16Array(payload.buffer);
+
+lctx.fillStyle = '#0b0d0b'; lctx.fillRect(0, 0, live.width, live.height);
+
+wirePanel(() => engine, {
+  stbyLed: $('stbyLed'), recLed: $('recLed'),
+  lookLcd: $('lookLcd'), persLcd: $('persLcd'), dropLcd: $('dropLcd'),
+  ringBar: $('ringBar'), queueBar: $('queueBar'),
+  extra: () => {
+    drawSegments($('levelBar'), Math.min(1, level * 3), '#b8f34c');
+    level *= 0.94;
+  },
+});
+
+function drawLiveChunk(f32) {
+  lctx.drawImage(live, -2, 0);
+  lctx.fillStyle = '#0b0d0b'; lctx.fillRect(live.width - 2, 0, 2, live.height);
+  let lo = 1, hi = -1;
+  for (let i = 0; i < f32.length; i++) { const v = f32[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+  level = Math.max(level, hi, -lo);
+  const mid = live.height / 2;
+  lctx.fillStyle = engine && engine.state === State.ACTIVE_RECORDING ? '#fb6597' : '#65fbd2';
+  lctx.fillRect(live.width - 2, mid - hi * mid, 2, Math.max(1, (hi - lo) * mid));
+}
+
+async function ensureAudio() {
+  if (audioCtx) { await audioCtx.resume(); return; }
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  await audioCtx.resume();
+  engine = new RetroCaptureEngine({
+    frameRate: audioCtx.sampleRate / CHUNK, prerollSeconds: PREROLL_S, slotBytes: CHUNK * 2, sink,
+    onWarn: (code, d) => console.warn('[retrocache]', code, d),
+  });
+  $('rateLcd').textContent = (audioCtx.sampleRate / 1000).toFixed(1) + 'K';
+  const src = audioCtx.createMediaStreamSource(stream);
+  // ScriptProcessor keeps this dependency-free; production would use an AudioWorklet.
+  const proc = audioCtx.createScriptProcessor(CHUNK, 1, 1);
+  proc.onaudioprocess = (e) => {
+    const f32 = e.inputBuffer.getChannelData(0);
+    drawLiveChunk(f32);
+    if (engine.state === State.IDLE) return;
+    for (let i = 0; i < CHUNK; i++) {
+      const s = Math.max(-1, Math.min(1, f32[i]));
+      payloadI16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    }
+    engine.ingest(now(), payload);
+  };
+  src.connect(proc);
+  proc.connect(audioCtx.destination);
+}
+
+function persistedSamples() {
+  const out = new Float32Array(sink.frames.length * CHUNK);
+  sink.frames.forEach((f, i) => {
+    const i16 = new Int16Array(f.bytes.buffer, f.bytes.byteOffset, CHUNK);
+    for (let j = 0; j < CHUNK; j++) out[i * CHUNK + j] = i16[j] / 0x8000;
+  });
+  return out;
+}
+
+function drawPersisted() {
+  const frames = sink.frames;
+  wctx.fillStyle = '#0b0d0b'; wctx.fillRect(0, 0, wave.width, wave.height);
+  if (!frames.length) { $('takeLcd').textContent = '--'; $('preLcd').textContent = '--'; return; }
+  const mid = wave.height / 2;
+  const px = wave.width / frames.length;
+  frames.forEach((f, i) => {
+    const i16 = new Int16Array(f.bytes.buffer, f.bytes.byteOffset, CHUNK);
+    let lo = 0, hi = 0;
+    for (let j = 0; j < CHUNK; j++) { const v = i16[j]; if (v < lo) lo = v; if (v > hi) hi = v; }
+    wctx.fillStyle = f.meta.origin === 'cache' ? '#65fbd2' : '#fb6597';
+    wctx.fillRect(i * px, mid - (hi / 0x8000) * mid, Math.max(1, px), Math.max(1, ((hi - lo) / 0x8000) * mid));
+    if (f.meta.gapBefore) { wctx.fillStyle = '#ff3b3b'; wctx.fillRect(i * px, 0, 2, 10); }
+  });
+  const b = frames.findIndex((f) => f.meta.origin === 'live');
+  if (b > 0) {
+    wctx.strokeStyle = '#fb6597'; wctx.setLineDash([4, 4]);
+    wctx.beginPath(); wctx.moveTo(b * px, 0); wctx.lineTo(b * px, wave.height); wctx.stroke();
+    wctx.setLineDash([]);
+  }
+  const cache = b < 0 ? frames.length : b;
+  $('takeLcd').textContent = ((frames.length * CHUNK) / audioCtx.sampleRate).toFixed(2);
+  $('preLcd').textContent = ((cache * CHUNK) / audioCtx.sampleRate).toFixed(2);
+}
+
+wireTransport({
+  arm: $('armBtn'), trig: $('trigBtn'), stop: $('stopBtn'), errLcd: $('errLcd'),
+  onArm: async () => {
+    await ensureAudio();
+    sink.frames.length = 0;
+    $('playBtn').disabled = $('wavBtn').disabled = true;
+    engine.arm();
+  },
+  onTrig: () => engine.trigger(),
+  onStop: async () => {
+    await engine.stop();
+    drawPersisted();
+    $('playBtn').disabled = $('wavBtn').disabled = sink.frames.length === 0;
+  },
+});
+
+$('playBtn').onclick = () => {
+  const samples = persistedSamples();
+  const buf = audioCtx.createBuffer(1, samples.length, audioCtx.sampleRate);
+  buf.copyToChannel(samples, 0);
+  const node = audioCtx.createBufferSource();
+  node.buffer = buf; node.connect(audioCtx.destination); node.start();
+};
+$('wavBtn').onclick = () => download('rc2-take.wav', encodeWav(persistedSamples(), audioCtx.sampleRate));
+</script>
+</body>
+</html>

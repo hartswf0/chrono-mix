@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<link rel="icon" href="data:," />
+<title>RC-0 SYN</title>
+<link rel="stylesheet" href="instrument.css" />
+</head>
+<body>
+<div class="device">
+  <section class="mod">
+    <div class="head">
+      <div>
+        <div class="brand">RETRO CACHE</div>
+        <a class="model" href="index.html">RC-0 · SYN · 30 FPS · 2 S PRE-ROLL</a>
+      </div>
+      <div class="leds">
+        <span class="led" id="stbyLed"><i></i>STBY</span>
+        <span class="led rec" id="recLed"><i></i>REC</span>
+      </div>
+    </div>
+    <canvas id="liveView" class="screen" width="480" height="240"></canvas>
+    <div class="bars">
+      <div class="bar"><span>RING</span><canvas id="ringBar" width="240" height="12"></canvas></div>
+      <div class="bar"><span>QUEUE</span><canvas id="queueBar" width="240" height="12"></canvas></div>
+    </div>
+    <div class="lcds">
+      <div class="lcd"><label>LOOK S</label><b id="lookLcd">0.0</b></div>
+      <div class="lcd"><label>PERS</label><b id="persLcd">0</b></div>
+      <div class="lcd"><label>DROP</label><b id="dropLcd">0</b></div>
+      <div class="lcd wide"><label>STATUS</label><b id="errLcd">READY</b></div>
+    </div>
+    <div class="keys">
+      <button class="key armk" id="armBtn">ARM</button>
+      <button class="key trig" id="trigBtn" disabled>TRIG</button>
+      <button class="key" id="stopBtn" disabled>STOP</button>
+    </div>
+  </section>
+
+  <section class="mod">
+    <canvas id="stripView" class="screen pixel" width="480" height="120"></canvas>
+    <div class="lcds">
+      <div class="lcd wide"><label>TAKE</label><b id="takeLcd">--</b></div>
+    </div>
+    <div class="legend">
+      <span><span class="chip" style="background:var(--cache)"></span>CACHE</span>
+      <span><span class="chip" style="background:var(--live)"></span>LIVE</span>
+    </div>
+  </section>
+</div>
+
+<script type="module">
+import { RetroCaptureEngine, MemorySink, State, Origin } from './retrocache.js';
+import { wirePanel, wireTransport } from './instrument.js';
+
+const FPS = 30, PREROLL_S = 2, THUMB = 48, SLOT = THUMB * THUMB;
+const $ = (id) => document.getElementById(id);
+
+const live = $('liveView'); const lctx = live.getContext('2d');
+const strip = $('stripView'); const sctx = strip.getContext('2d');
+
+const sink = new MemorySink();
+const engine = new RetroCaptureEngine({
+  frameRate: FPS, prerollSeconds: PREROLL_S, slotBytes: SLOT, sink,
+  onWarn: (code, d) => console.warn('[retrocache]', code, d),
+});
+wirePanel(() => engine, {
+  stbyLed: $('stbyLed'), recLed: $('recLed'),
+  lookLcd: $('lookLcd'), persLcd: $('persLcd'), dropLcd: $('dropLcd'),
+  ringBar: $('ringBar'), queueBar: $('queueBar'),
+});
+
+const thumb = document.createElement('canvas');
+thumb.width = THUMB; thumb.height = THUMB;
+const tctx = thumb.getContext('2d', { willReadFrequently: true });
+const payload = new Uint8Array(SLOT);
+
+let frameNo = 0;
+function drawScene(t) {
+  const w = live.width, h = live.height;
+  lctx.fillStyle = '#0b0d0b'; lctx.fillRect(0, 0, w, h);
+  const cx = w / 2 + Math.sin(t / 700) * w * 0.3;
+  const cy = h / 2 + Math.cos(t / 530) * h * 0.25;
+  lctx.strokeStyle = '#65fbd2'; lctx.lineWidth = 3;
+  lctx.beginPath(); lctx.arc(cx, cy, 30 + 14 * Math.sin(t / 210), 0, Math.PI * 2); lctx.stroke();
+  lctx.strokeStyle = '#324';
+  lctx.beginPath(); lctx.arc(w / 2, h / 2, 80, t / 900, t / 900 + 4); lctx.stroke();
+  lctx.fillStyle = '#cfe1f2'; lctx.font = '16px ui-monospace,monospace';
+  lctx.fillText(String(frameNo).padStart(5, '0'), 10, 22);
+}
+
+let lastCapture = 0;
+function loop(t) {
+  drawScene(t);
+  if (t - lastCapture >= 1000 / FPS - 1) {
+    lastCapture = t;
+    tctx.drawImage(live, 0, 0, THUMB, THUMB);
+    const rgba = tctx.getImageData(0, 0, THUMB, THUMB).data;
+    for (let i = 0; i < SLOT; i++) payload[i] = rgba[i * 4 + 1];
+    engine.ingest(t * 1000, payload);
+    frameNo++;
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+function renderStrip() {
+  const frames = sink.frames;
+  sctx.fillStyle = '#0b0d0b'; sctx.fillRect(0, 0, strip.width, strip.height);
+  if (frames.length === 0) { $('takeLcd').textContent = '--'; return; }
+  const cols = Math.min(frames.length, 16);
+  const rows = Math.ceil(frames.length / cols);
+  const cw = strip.width / cols, ch = Math.min(cw, strip.height / rows);
+  strip.height = Math.max(120, Math.ceil(rows * ch));
+  sctx.fillStyle = '#0b0d0b'; sctx.fillRect(0, 0, strip.width, strip.height);
+  const img = sctx.createImageData(THUMB, THUMB);
+  frames.forEach((f, i) => {
+    for (let p = 0; p < SLOT; p++) {
+      const v = f.bytes[p];
+      img.data[p * 4] = v; img.data[p * 4 + 1] = v; img.data[p * 4 + 2] = v; img.data[p * 4 + 3] = 255;
+    }
+    const x = (i % cols) * cw, y = Math.floor(i / cols) * ch;
+    createImageBitmap(img).then((bmp) => {
+      sctx.drawImage(bmp, x + 1, y + 1, cw - 2, ch - 2);
+      sctx.strokeStyle = f.meta.origin === Origin.CACHE ? '#65fbd2' : '#fb6597';
+      sctx.strokeRect(x + 0.5, y + 0.5, cw - 1, ch - 1);
+    });
+  });
+  const cache = frames.filter((f) => f.meta.origin === Origin.CACHE).length;
+  const span = (frames[frames.length - 1].meta.timestampUs - frames[0].meta.timestampUs) / 1e6;
+  $('takeLcd').textContent =
+    `${frames.length}F · ${cache} PRE · ${span.toFixed(2)}S · ID ${frames[0].meta.frameId}–${frames[frames.length - 1].meta.frameId}`;
+}
+
+wireTransport({
+  arm: $('armBtn'), trig: $('trigBtn'), stop: $('stopBtn'), errLcd: $('errLcd'),
+  onArm: async () => { sink.frames.length = 0; engine.arm(); },
+  onTrig: () => engine.trigger(),
+  onStop: async () => { await engine.stop(); renderStrip(); },
+});
+</script>
+</body>
+</html>
