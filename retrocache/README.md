@@ -103,6 +103,10 @@ APIs require HTTPS.
   geolocation, Generic Sensor API feeds (gyroscope, magnetometer, ambient
   light) and battery, each with its own rate and pre-roll depth; trace
   plot + CSV.
+- `mix.html` — **RC-5 MIX**: the legacy VJ-1 turntables
+  (`../turntables.html`) running unmodified in a same-origin iframe, with
+  its mix-screen canvas tapped as a 20 fps sensor feed, 8 s pre-roll;
+  scratch a jam, then recover it. Scrub/replay + PNG export.
 - `demo.html` — **RC-0 SYN**: synthetic canvas sensor, no permissions.
 - Chassis and panel wiring live in `instrument.css` / `instrument.js`
   (LEDs, LCDs, segment meters, transport); `demo-ui.js` holds the

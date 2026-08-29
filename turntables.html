@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Dual Scratchable VJ Turntables — Symmetry</title>
+<style>
+  :root{ --bg:#0b0c0f; --fg:#e6e6e6; --line:#1f2533; --accent:#65fbd2; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Roboto,Inter,Arial,sans-serif;overflow:hidden}
+  .app{display:flex;flex-direction:column;min-height:100vh;gap:8px;padding:6px}
+  /* Mixer */
+  .mixer{flex:0 0 auto;border:1px solid var(--line);border-radius:14px;background:#0f131b;display:flex;flex-direction:column;gap:6px;padding:6px}
+  .mix-screen{width:100%;aspect-ratio:1;background:#000;border-radius:12px;overflow:hidden;position:relative}
+  .mix-screen canvas{width:100%;height:100%}
+  .row{display:flex;gap:6px;align-items:center;justify-content:center}
+  .slider{flex:1}
+  .pulse{width:12px;height:12px;border-radius:50%;background:#222;box-shadow:0 0 0 0 rgba(101,251,210,.0)}
+  .tiny{font-size:11px;color:#9aa0a6}
+  .btn{border:none;background:#141923;border:1px solid #1c2330;color:#cfe1f2;border-radius:10px;padding:6px 10px;min-height:32px;font-family:ui-monospace, SFMono-Regular, Menlo, monospace}
+  select.blend{background:#141923;color:#cfe1f2;border:1px solid #1c2330;border-radius:10px;padding:6px;min-height:32px}
+  .toggle{display:flex;align-items:center;gap:6px}
+  .toggle input{accent-color:var(--accent)}
+  .link{color:#9fe5ff;text-decoration:none}
+  /* Decks */
+  .decks{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .deck{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .portal{width:100%;aspect-ratio:1;border-radius:50%;position:relative;display:grid;place-items:center;background:#0c0f15;box-shadow:0 0 0 2px #1d2230,0 0 30px rgba(101,251,210,.12) inset;overflow:hidden;touch-action:none}
+  .portal canvas{width:94%;height:94%;border-radius:50%}
+  .ring{position:absolute;inset:3%;border-radius:50%;pointer-events:none}
+  input[type=file]{display:none}
+  .toast{position:fixed;left:50%;top:10px;transform:translateX(-50%);background:#111722;border:1px solid #1f2633;color:#cfe1f2;padding:8px 12px;border-radius:10px;font-size:12px;opacity:.95;z-index:50}
+  /* Glyph buttons (no emoji) */
+  .glyph{display:inline-flex;align-items:center;justify-content:center;gap:6px}
+  .glyph svg{width:16px;height:16px;fill:#cfe1f2}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Mixer -->
+  <section class="mixer">
+    <div class="mix-screen"><canvas id="mixView" width="640" height="640"></canvas></div>
+    <div class="row">
+      <select id="blendSelect" class="blend" title="Blend">
+        <option value="source-over">Normal</option>
+        <option value="screen" selected>Screen</option>
+        <option value="multiply">Multiply</option>
+        <option value="overlay">Overlay</option>
+        <option value="hard-light">Hard Light</option>
+        <option value="soft-light">Soft Light</option>
+        <option value="lighten">Lighten</option>
+        <option value="darken">Darken</option>
+        <option value="difference">Difference</option>
+        <option value="exclusion">Exclusion</option>
+        <option value="lighter">Add</option>
+      </select>
+      <input id="mixSlider" class="slider" type="range" min="0" max="1" step="0.01" value="0.5" />
+      <div class="pulse" id="metroPulse"></div>
+      <button class="btn glyph" id="rec8" title="Record 8s">
+        <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+        REC 8s
+      </button>
+      <a id="dlLink" class="link" style="display:none" download="mix-8s.webm">Download</a>
+    </div>
+    <div class="row">
+      <button class="btn" id="bpmDown">-</button>
+      <input id="bpm" class="slider" type="range" min="30" max="240" step="1" value="120" />
+      <button class="btn" id="bpmUp">+</button>
+      <button class="btn" id="modeBPM">B/F</button>
+      <span class="tiny" id="bpmLabel">120 BPM</span>
+      <button class="btn" id="interpBtn" title="Frame interpolation">Interp</button>
+      <label class="toggle tiny"><input type="checkbox" id="perfMode"/> Perf</label>
+      <span class="tiny" id="diag">OK</span>
+    </div>
+  </section>
+
+  <!-- Decks (six-fold symmetry accents) -->
+  <section class="decks">
+    <div class="deck" id="deckL">
+      <div class="portal">
+        <canvas id="viewL" width="512" height="512"></canvas>
+        <canvas id="ringL" class="ring" width="512" height="512"></canvas>
+      </div>
+      <div class="row">
+        <input id="fileL" type="file" accept="video/*" />
+        <button class="btn glyph" id="uploadL" title="Load A">
+          <svg viewBox="0 0 24 24"><path d="M4 18h16v2H4zM12 4l4 4h-3v6h-2V8H8z"/></svg>
+          LOAD A
+        </button>
+        <button class="btn glyph" id="autoL" title="Auto A">
+          <svg id="autoLIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          AUTO
+        </button>
+      </div>
+    </div>
+    <div class="deck" id="deckR">
+      <div class="portal">
+        <canvas id="viewR" width="512" height="512"></canvas>
+        <canvas id="ringR" class="ring" width="512" height="512"></canvas>
+      </div>
+      <div class="row">
+        <input id="fileR" type="file" accept="video/*" />
+        <button class="btn glyph" id="uploadR" title="Load B">
+          <svg viewBox="0 0 24 24"><path d="M4 18h16v2H4zM12 4l4 4h-3v6h-2V8H8z"/></svg>
+          LOAD B
+        </button>
+        <button class="btn glyph" id="autoR" title="Auto B">
+          <svg id="autoRIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          AUTO
+        </button>
+      </div>
+    </div>
+  </section>
+  <div class="toast" id="toast" style="display:none">Loading…</div>
+</div>
+
+<script>
+// ===== Helpers =====
+function makeCanvas(w,h){const c=document.createElement('canvas');c.width=w;c.height=h;return c;}
+function byId(x){return document.getElementById(x);} 
+
+// ===== Stable frame interpolation =====
+function drawInterpFrame(frames, idxFloat, ctx, w, h){
+  const N = frames.length; if(!N){ ctx.fillStyle='#0a0d14'; ctx.fillRect(0,0,w,h); return; }
+  const a = Math.floor(idxFloat) % N; const b = (a+1)%N; const t = idxFloat - Math.floor(idxFloat);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation='source-over';
+  ctx.drawImage(frames[a],0,0,w,h);
+  if(t>0){ ctx.globalAlpha = t; ctx.drawImage(frames[b],0,0,w,h); }
+  ctx.globalAlpha=1;
+}
+
+// ===== Mixer buffers (no heap churn) =====
+const mixBufL = makeCanvas(640,640);
+const mixBufR = makeCanvas(640,640);
+function drawMix(){
+  const c=byId('mixView'); const ctx=c.getContext('2d');
+  ctx.clearRect(0,0,c.width,c.height);
+  const lctx = mixBufL.getContext('2d'); lctx.clearRect(0,0,mixBufL.width,mixBufL.height);
+  const rctx = mixBufR.getContext('2d'); rctx.clearRect(0,0,mixBufR.width,mixBufR.height);
+  if(state.L.frames.length){ drawInterpFrame(state.L.frames, state.L.idxFloat, lctx, mixBufL.width, mixBufL.height); ctx.drawImage(mixBufL,0,0,c.width,c.height); }
+  if(state.R.frames.length){ drawInterpFrame(state.R.frames, state.R.idxFloat, rctx, mixBufR.width, mixBufR.height); ctx.globalAlpha = state.mix; ctx.globalCompositeOperation = state.blend; ctx.drawImage(mixBufR,0,0,c.width,c.height); ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over'; }
+}
+
+// ===== Video sampler (deterministic, bounded) =====
+async function sampleVideo(file,target=160){
+  return new Promise(async (resolve, reject)=>{
+    try{
+      const url = URL.createObjectURL(file);
+      const v = document.createElement('video');
+      v.src = url; v.crossOrigin='anonymous'; v.muted=true; v.playsInline=true; v.preload='auto';
+      const show=(m)=>{const t=byId('toast'); t.textContent=m; t.style.display='block';};
+      const hide=()=>{byId('toast').style.display='none';};
+      show('Decoding…');
+      await new Promise(res=>{ v.onloadedmetadata=()=>res(); });
+      const dur = Math.max(0.01, v.duration||8);
+      const N = Math.min(target, window.__perfOn? 100: 180);
+      const size = window.__perfOn? 192: 256;
+      const frames=[]; const off=makeCanvas(size,size); const octx=off.getContext('2d');
+      for(let i=0;i<N;i++){
+        const t = (i/(N-1))*dur;
+        await new Promise(res=>{ v.currentTime=t; v.onseeked=()=>res(); });
+        octx.clearRect(0,0,size,size);
+        octx.drawImage(v,0,0,size,size);
+        const bmp = await createImageBitmap(off);
+        frames.push(bmp);
+      }
+      URL.revokeObjectURL(url); hide(); resolve(frames);
+    }catch(e){ reject(e); }
+  });
+}
+
+// ===== State =====
+const state={
+  L:{frames:[],idxFloat:0,drag:false,lastA:0,auto:false},
+  R:{frames:[],idxFloat:0,drag:false,lastA:0,auto:false},
+  blend:'screen', mix:0.5, tempo:120, mode:'BPM', interp:true,
+  audio:null, dest:null,
+  fpsTarget: 30
+};
+
+// ===== Audio (soft clicks + recording dest) =====
+function ensureAudio(){ if(state.audio) return; const AC=new (window.AudioContext||window.webkitAudioContext)(); const master=AC.createGain(); master.gain.value=0.2; master.connect(AC.destination); const dest=AC.createMediaStreamDestination(); master.connect(dest); state.audio={AC,master}; state.dest=dest; }
+function clickTick(pitch=650, vol=.07){ if(!state.audio) return; const {AC,master}=state.audio; const o=AC.createOscillator(); const g=AC.createGain(); o.type='square'; o.frequency.value=pitch; g.gain.value=vol; o.connect(g).connect(master); o.start(); g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime+0.04); o.stop(AC.currentTime+0.05); }
+
+// ===== Six-fold symmetry ring (hashes + spokes) =====
+function drawRing(id){
+  const ring=byId(id); const ctx=ring.getContext('2d');
+  const w=ring.width,h=ring.height,cx=w/2,cy=h/2,R=w/2-6; ctx.clearRect(0,0,w,h);
+  ctx.strokeStyle='#1f2635'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.stroke();
+  // 60 ticks + heavier every 5; plus 6 radial spokes for 6-symmetry
+  for(let i=0;i<60;i++){
+    const a=i*(Math.PI*2/60)-Math.PI/2; const len=(i%5===0)?14:7;
+    const x1=cx+Math.cos(a)*R, y1=cy+Math.sin(a)*R;
+    const x2=cx+Math.cos(a)*(R-len), y2=cy+Math.sin(a)*(R-len);
+    ctx.strokeStyle=(i%5===0)?'#65fbd2':'#3a4458'; ctx.lineWidth=(i%5===0)?2:1;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  }
+  for(let k=0;k<6;k++){
+    const a=k*(Math.PI*2/6)-Math.PI/2; const x=cx+Math.cos(a)*(R-18); const y=cy+Math.sin(a)*(R-18);
+    ctx.fillStyle='#223043'; ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fill();
+  }
+}
+
+// ===== Deck render =====
+function drawDeck(side){ const cv=byId('view'+side); const ctx=cv.getContext('2d'); drawInterpFrame(state[side].frames, state[side].idxFloat, ctx, cv.width, cv.height); drawRing('ring'+side); }
+
+// ===== Scratch controls =====
+function angleAt(e,cv){const r=cv.getBoundingClientRect();const x=(e.touches?e.touches[0].clientX:e.clientX)-r.left-r.width/2;const y=(e.touches?e.touches[0].clientY:e.clientY)-r.top-r.height/2;return Math.atan2(y,x);} 
+function bindDeck(side){
+  const cv=byId('view'+side);
+  let lastHaptic=0, lastClickIdx=-1;
+  const start=(e)=>{ ensureAudio(); const now=performance.now(); if(navigator.vibrate && now-lastHaptic>40){ navigator.vibrate(5); lastHaptic=now; } state[side].drag=true; state[side].lastA=angleAt(e,cv); e.preventDefault(); };
+  const move=(e)=>{ if(!state[side].drag) return; const a=angleAt(e,cv); const d=a-state[side].lastA; state[side].lastA=a; const N=(state[side].frames.length||1); state[side].idxFloat=(state[side].idxFloat + d*40 + N)%N; const idxInt=Math.floor(state[side].idxFloat); if(idxInt!==lastClickIdx){ const now=performance.now(); if(navigator.vibrate && now-lastHaptic>30){ navigator.vibrate(2); lastHaptic=now; } clickTick(560+100*Math.min(1,Math.abs(d)*40), .06); lastClickIdx=idxInt; } };
+  const end=()=>{ state[side].drag=false; };
+  cv.addEventListener('mousedown',start); cv.addEventListener('mousemove',move); window.addEventListener('mouseup',end);
+  cv.addEventListener('touchstart',start,{passive:false}); cv.addEventListener('touchmove',move,{passive:false}); window.addEventListener('touchend',end);
+}
+
+bindDeck('L'); bindDeck('R');
+
+// ===== Tempo & autoplay =====
+let lastTick=0; function metro(ts){ const secPer=60/state.tempo; if(!lastTick) lastTick=ts; const d=(ts-lastTick)/1000; if(d>=secPer){ lastTick=ts; const pulse=byId('metroPulse'); pulse.style.boxShadow='0 0 0 8px rgba(101,251,210,.22)'; setTimeout(()=>{pulse.style.boxShadow='0 0 0 0 rgba(0,0,0,0)';},80); if(!state.L.drag && state.L.auto && state.L.frames.length) state.L.idxFloat=(state.L.idxFloat+1)%state.L.frames.length; if(!state.R.drag && state.R.auto && state.R.frames.length) state.R.idxFloat=(state.R.idxFloat+1)%state.R.frames.length; } }
+function idleAdvance(dt){ const fps=12; const step=dt*fps; if(!state.L.drag && !state.L.auto && state.L.frames.length) state.L.idxFloat=(state.L.idxFloat+step)%state.L.frames.length; if(!state.R.drag && !state.R.auto && state.R.frames.length) state.R.idxFloat=(state.R.idxFloat+step)%state.R.frames.length; }
+
+// ===== Main loop (soft FPS cap + visibility pause) =====
+let lastTs=0, acc=0; function loop(ts){ const dt=((ts-lastTs)||0)/1000; lastTs=ts; acc+=dt; const frameInterval=1/Math.max(15,(window.__perfOn?24:state.fpsTarget)); if(acc>=frameInterval){ acc=0; metro(ts||performance.now()); idleAdvance(frameInterval); drawDeck('L'); drawDeck('R'); drawMix(); } requestAnimationFrame(loop); } requestAnimationFrame(loop);
+ document.addEventListener('visibilitychange',()=>{ if(document.hidden){ lastTs=performance.now(); }});
+
+// ===== UI wiring =====
+byId('uploadL').onclick=()=>byId('fileL').click(); byId('uploadR').onclick=()=>byId('fileR').click();
+byId('fileL').onchange=async e=>{ const f=e.target.files[0]; if(!f) return; const t=byId('toast'); t.textContent='Loading A…'; t.style.display='block'; (state.L.frames||[]).forEach(b=>{try{b.close&&b.close();}catch{}}); state.L.frames=[]; state.L.frames=await sampleVideo(f, window.__perfOn? 100: 180); state.L.idxFloat=0; t.style.display='none'; updateDiag(); };
+byId('fileR').onchange=async e=>{ const f=e.target.files[0]; if(!f) return; const t=byId('toast'); t.textContent='Loading B…'; t.style.display='block'; (state.R.frames||[]).forEach(b=>{try{b.close&&b.close();}catch{}}); state.R.frames=[]; state.R.frames=await sampleVideo(f, window.__perfOn? 100: 180); state.R.idxFloat=0; t.style.display='none'; updateDiag(); };
+byId('autoL').onclick=()=>{ state.L.auto=!state.L.auto; byId('autoLIcon').innerHTML = state.L.auto ? '<path d="M6 6h4v12H6zM14 6h4v12h-4z"/>' : '<path d="M8 5v14l11-7z"/>'; };
+byId('autoR').onclick=()=>{ state.R.auto=!state.R.auto; byId('autoRIcon').innerHTML = state.R.auto ? '<path d="M6 6h4v12H6zM14 6h4v12h-4z"/>' : '<path d="M8 5v14l11-7z"/>'; };
+byId('blendSelect').oninput=e=>state.blend=e.target.value; byId('mixSlider').oninput=e=>state.mix=parseFloat(e.target.value);
+byId('bpm').oninput=e=>{ state.tempo=parseInt(e.target.value,10); byId('bpmLabel').textContent=state.tempo+' '+state.mode; ensureAudio(); };
+byId('bpmDown').onclick=()=>{ const v=Math.max(30,state.tempo-1); byId('bpm').value=v; byId('bpm').dispatchEvent(new Event('input')); };
+byId('bpmUp').onclick=()=>{ const v=Math.min(240,state.tempo+1); byId('bpm').value=v; byId('bpm').dispatchEvent(new Event('input')); };
+byId('modeBPM').onclick=()=>{ state.mode=(state.mode==='BPM')?'FPM':'BPM'; byId('bpmLabel').textContent=state.tempo+' '+state.mode; };
+byId('interpBtn').onclick=()=>{ state.interp=!state.interp; byId('interpBtn').style.opacity= state.interp?1:0.5; };
+byId('perfMode').onchange=(e)=>{ window.__perfOn= !!e.target.checked; state.fpsTarget = window.__perfOn? 24: 30; updateDiag(); };
+
+// ===== 8s Recording (mix + clicks) =====
+let mediaRec=null, chunks=[]; byId('rec8').onclick=()=>{ try{ const canvas=byId('mixView'); const stream=canvas.captureStream(window.__perfOn? 24: 30); ensureAudio(); if(state.dest) state.dest.stream.getAudioTracks().forEach(t=>stream.addTrack(t)); chunks=[]; mediaRec=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp9,opus', videoBitsPerSecond: window.__perfOn? 2_000_000: 3_000_000}); mediaRec.ondataavailable=(e)=>{ if(e.data.size>0) chunks.push(e.data); }; mediaRec.onstop=()=>{ const blob=new Blob(chunks,{type:'video/webm'}); const url=URL.createObjectURL(blob); const a=byId('dlLink'); a.href=url; a.style.display='inline'; }; mediaRec.start(); setTimeout(()=>{ try{ mediaRec.stop(); }catch{} }, 8000); }catch(err){ console.warn('rec error', err); } };
+
+// ===== Default test frames =====
+async function makeTestFrames(hue){const frames=[];const size=window.__perfOn? 192: 256;const tmp=makeCanvas(size,size);const tctx=tmp.getContext('2d');for(let i=0;i<150;i++){const t=i/150;tctx.fillStyle='#0b0c10';tctx.fillRect(0,0,size,size);const x=size/2+Math.cos(t*2*Math.PI)*size*0.27;const y=size/2+Math.sin(t*2*Math.PI)*size*0.22;const r=size*0.18+Math.sin(t*6.283*0.5)*size*0.09;const g=tctx.createRadialGradient(x,y,10,x,y,r);g.addColorStop(0,`hsl(${(hue+i)%360},80%,60%)`);g.addColorStop(1,'#0b0c10');tctx.fillStyle=g;tctx.beginPath();tctx.arc(x,y,r,0,Math.PI*2);tctx.fill();frames.push(await createImageBitmap(tmp));}return frames;}
+(async()=>{ state.L.frames=await makeTestFrames(200); state.R.frames=await makeTestFrames(320); updateDiag(); })();
+
+// ===== Diagnostics =====
+function updateDiag(){ const d=byId('diag'); const dpr=(window.devicePixelRatio||1).toFixed(2); d.textContent=`A:${state.L.frames.length} B:${state.R.frames.length} dpr:${dpr}`; }
+</script>
+</body>
+</html>

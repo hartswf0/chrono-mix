@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<link rel="icon" href="data:," />
+<title>RC-5 MIX</title>
+<link rel="stylesheet" href="instrument.css" />
+<style>
+  .jack{width:100%;height:540px;border:0;border-radius:10px;background:#0b0d0b;
+    display:block;box-shadow:inset 0 0 0 3px #23251f}
+</style>
+</head>
+<body>
+<div class="device">
+  <section class="mod">
+    <div class="head">
+      <div>
+        <div class="brand">RETRO CACHE</div>
+        <a class="model" href="index.html">RC-5 · MIX · 20 FPS · 8 S PRE-ROLL · SOURCE: VJ-1</a>
+      </div>
+      <div class="leds">
+        <span class="led" id="stbyLed"><i></i>STBY</span>
+        <span class="led rec" id="recLed"><i></i>REC</span>
+      </div>
+    </div>
+    <!-- The legacy VJ-1 turntables run unmodified inside; RC-5 taps its
+         mix-screen canvas as a sensor feed. Scratch the decks below. -->
+    <iframe id="jack" class="jack" src="../turntables.html" title="VJ-1 TURNTABLES"></iframe>
+    <div class="bars">
+      <div class="bar"><span>RING</span><canvas id="ringBar" width="240" height="12"></canvas></div>
+      <div class="bar"><span>QUEUE</span><canvas id="queueBar" width="240" height="12"></canvas></div>
+    </div>
+    <div class="lcds">
+      <div class="lcd"><label>LOOK S</label><b id="lookLcd">0.0</b></div>
+      <div class="lcd"><label>SRC</label><b id="srcLcd">--</b></div>
+      <div class="lcd"><label>PERS</label><b id="persLcd">0</b></div>
+      <div class="lcd"><label>DROP</label><b id="dropLcd">0</b></div>
+      <div class="lcd wide"><label>STATUS</label><b id="errLcd">READY</b></div>
+    </div>
+    <div class="keys">
+      <button class="key armk" id="armBtn">ARM</button>
+      <button class="key trig" id="trigBtn" disabled>TRIG</button>
+      <button class="key" id="stopBtn" disabled>STOP</button>
+    </div>
+  </section>
+
+  <section class="mod">
+    <canvas id="playView" class="screen pixel" width="480" height="480"></canvas>
+    <div class="row">
+      <button class="key small" id="playBtn" disabled>PLAY</button>
+      <input type="range" id="scrub" min="0" max="0" value="0" disabled />
+      <button class="key small" id="pngBtn" disabled>PNG</button>
+    </div>
+    <div class="lcds">
+      <div class="lcd wide"><label>FRAME</label><b id="frameLcd">--</b></div>
+    </div>
+    <div class="legend">
+      <span><span class="chip" style="background:var(--cache)"></span>CACHE</span>
+      <span><span class="chip" style="background:var(--live)"></span>LIVE</span>
+    </div>
+  </section>
+</div>
+
+<script type="module">
+import { RetroCaptureEngine, MemorySink, State } from './retrocache.js';
+import { makeTimestamper, download } from './demo-ui.js';
+import { wirePanel, wireTransport } from './instrument.js';
+
+const FPS = 20, PREROLL_S = 8, TW = 80, TH = 80, SLOT = TW * TH * 3;
+const $ = (id) => document.getElementById(id);
+
+const jack = $('jack');
+const play = $('playView'); const pctx = play.getContext('2d');
+
+const sink = new MemorySink();
+const engine = new RetroCaptureEngine({
+  frameRate: FPS, prerollSeconds: PREROLL_S, slotBytes: SLOT, sink,
+  onWarn: (code, d) => console.warn('[retrocache]', code, d),
+});
+wirePanel(() => engine, {
+  stbyLed: $('stbyLed'), recLed: $('recLed'),
+  lookLcd: $('lookLcd'), persLcd: $('persLcd'), dropLcd: $('dropLcd'),
+  ringBar: $('ringBar'), queueBar: $('queueBar'),
+});
+
+const now = makeTimestamper();
+const thumb = document.createElement('canvas');
+thumb.width = TW; thumb.height = TH;
+const tctx = thumb.getContext('2d', { willReadFrequently: true });
+const payload = new Uint8Array(SLOT);
+
+// Same-origin tap on the legacy mixer's screen.
+function sourceCanvas() {
+  try { return jack.contentDocument?.getElementById('mixView') ?? null; }
+  catch { return null; }
+}
+
+let lastCapture = 0;
+function loop(t) {
+  const src = sourceCanvas();
+  $('srcLcd').textContent = src ? 'VJ-1' : '--';
+  if (src && engine.state !== State.IDLE && t - lastCapture >= 1000 / FPS - 1) {
+    lastCapture = t;
+    tctx.drawImage(src, 0, 0, TW, TH);
+    const rgba = tctx.getImageData(0, 0, TW, TH).data;
+    for (let i = 0, j = 0; j < SLOT; i += 4) {
+      payload[j++] = rgba[i]; payload[j++] = rgba[i + 1]; payload[j++] = rgba[i + 2];
+    }
+    engine.ingest(now(), payload);
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+const playImg = pctx.createImageData(TW, TH);
+const playBuf = document.createElement('canvas');
+playBuf.width = TW; playBuf.height = TH;
+const pbctx = playBuf.getContext('2d');
+let shownIdx = 0;
+
+function showFrame(i) {
+  const f = sink.frames[i];
+  if (!f) return;
+  shownIdx = i;
+  for (let p = 0, j = 0; j < SLOT; p += 4) {
+    playImg.data[p] = f.bytes[j++]; playImg.data[p + 1] = f.bytes[j++];
+    playImg.data[p + 2] = f.bytes[j++]; playImg.data[p + 3] = 255;
+  }
+  pbctx.putImageData(playImg, 0, 0);
+  pctx.imageSmoothingEnabled = false;
+  pctx.drawImage(playBuf, 0, 0, play.width, play.height);
+  pctx.strokeStyle = f.meta.origin === 'cache' ? '#65fbd2' : '#fb6597';
+  pctx.lineWidth = 4;
+  pctx.strokeRect(2, 2, play.width - 4, play.height - 4);
+  const dt = (f.meta.timestampUs - f.meta.triggerTimestampUs) / 1e6;
+  $('frameLcd').textContent =
+    `${String(i + 1).padStart(3, '0')}/${String(sink.frames.length).padStart(3, '0')} ` +
+    `· ${f.meta.origin.toUpperCase()} · T${dt >= 0 ? '+' : ''}${dt.toFixed(2)}S` +
+    (f.meta.gapBefore ? ` · GAP ${f.meta.gapBefore}` : '');
+}
+
+let playTimer = null;
+$('playBtn').onclick = () => {
+  const btn = $('playBtn');
+  if (playTimer) { clearInterval(playTimer); playTimer = null; btn.textContent = 'PLAY'; return; }
+  btn.textContent = 'STOP';
+  playTimer = setInterval(() => {
+    const i = (Number($('scrub').value) + 1) % sink.frames.length;
+    $('scrub').value = i;
+    showFrame(i);
+  }, 1000 / FPS);
+};
+$('scrub').oninput = () => showFrame(Number($('scrub').value));
+$('pngBtn').onclick = () => play.toBlob((b) => {
+  const f = sink.frames[shownIdx];
+  download(`rc5-frame-${f.meta.frameId}.png`, b);
+});
+
+wireTransport({
+  arm: $('armBtn'), trig: $('trigBtn'), stop: $('stopBtn'), errLcd: $('errLcd'),
+  onArm: async () => {
+    if (!sourceCanvas()) throw new Error('VJ-1 NOT LOADED');
+    sink.frames.length = 0;
+    if (playTimer) { clearInterval(playTimer); playTimer = null; $('playBtn').textContent = 'PLAY'; }
+    $('playBtn').disabled = $('scrub').disabled = $('pngBtn').disabled = true;
+    engine.arm();
+  },
+  onTrig: () => engine.trigger(),
+  onStop: async () => {
+    await engine.stop();
+    if (sink.frames.length) {
+      $('scrub').max = sink.frames.length - 1; $('scrub').value = 0;
+      $('scrub').disabled = $('playBtn').disabled = $('pngBtn').disabled = false;
+      showFrame(0);
+    }
+  },
+});
+</script>
+</body>
+</html>
