@@ -1,0 +1,76 @@
+/* Instrument chassis for the retro cache devices.
+   Light hardware panel, dark inset screens, LCD readouts, physical keys. */
+:root{
+  --panel:#d8d5cf; --mod:#e7e5e0; --edge:#b6b3ac; --well:#c9c6bf;
+  --ink:#23231f; --dim:#82807a;
+  --rec:#ff4f00; --ok:#12b06e;
+  --cache:#65fbd2; --live:#fb6597;
+  --lcd-bg:#181c17; --lcd-fg:#b8f34c; --lcd-dim:#55604b;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;min-height:100%;background:var(--panel);color:var(--ink);
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  -webkit-user-select:none;user-select:none}
+.device{max-width:520px;margin:0 auto;padding:12px;display:flex;flex-direction:column;gap:12px}
+.mod{background:var(--mod);border:1px solid var(--edge);border-radius:16px;padding:12px;
+  display:flex;flex-direction:column;gap:10px;
+  box-shadow:inset 0 1px 0 #fff,0 2px 5px rgba(0,0,0,.14)}
+.head{display:flex;justify-content:space-between;align-items:center}
+.brand{font-size:12px;font-weight:700;letter-spacing:.16em}
+.model{font-size:9px;color:var(--dim);letter-spacing:.14em}
+a.model{text-decoration:none}
+.leds{display:flex;gap:12px}
+.led{display:flex;flex-direction:column;align-items:center;gap:3px;
+  font-size:8px;letter-spacing:.12em;color:var(--dim)}
+.led i{width:10px;height:10px;border-radius:50%;background:#a9a69f;
+  border:1px solid #8b887f;display:block}
+.led.on i{background:var(--ok);box-shadow:0 0 7px var(--ok)}
+.led.rec.on i{background:var(--rec);box-shadow:0 0 9px var(--rec)}
+.screen{width:100%;display:block;background:#0b0d0b;border-radius:10px;
+  border:3px solid #23251f;box-shadow:inset 0 2px 10px rgba(0,0,0,.75)}
+.pixel{image-rendering:pixelated}
+.lcds{display:flex;gap:8px;flex-wrap:wrap}
+.lcd{flex:1;min-width:64px;background:var(--lcd-bg);border-radius:7px;
+  padding:5px 8px 6px;border:2px solid #0e110d}
+.lcd label{display:block;font-size:8px;color:var(--lcd-dim);letter-spacing:.18em}
+.lcd b{font-size:16px;line-height:1.2;color:var(--lcd-fg);font-weight:600;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.lcd.wide{flex:100%}
+.lcd.wide b{font-size:11px;white-space:normal;word-break:break-word}
+.bars{display:flex;flex-direction:column;gap:6px}
+.bar{display:flex;align-items:center;gap:8px;font-size:8px;color:var(--dim);letter-spacing:.14em}
+.bar span{width:44px;text-align:right}
+.bar canvas{flex:1;height:12px}
+.keys{display:flex;gap:14px;align-items:center;justify-content:center;padding:4px 0}
+.key{min-width:64px;height:56px;border-radius:12px;background:#f3f1ed;
+  border:1px solid var(--edge);box-shadow:0 3px 0 #a5a29b,inset 0 1px 0 #fff;
+  font-family:inherit;font-size:10px;letter-spacing:.12em;color:var(--ink);cursor:pointer}
+.key:active:not(:disabled){transform:translateY(2px);box-shadow:0 1px 0 #a5a29b}
+.key:disabled{opacity:.38;cursor:default}
+.key.trig{width:88px;height:88px;min-width:88px;border-radius:50%;
+  background:var(--rec);color:#fff;border:4px solid #cc3f00;font-weight:700;
+  box-shadow:0 4px 0 #a83400,inset 0 2px 0 rgba(255,255,255,.35)}
+.key.trig:active:not(:disabled){transform:translateY(3px);box-shadow:0 1px 0 #a83400}
+.key.armk{border-color:#0e9a60;color:#0b7a4d}
+.key.small{min-width:52px;height:40px;font-size:9px}
+.key.tog.on{background:#20241f;color:var(--lcd-fg);border-color:#0e110d;box-shadow:0 1px 0 #a5a29b}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+input[type=range]{flex:1;appearance:none;height:26px;background:transparent;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:var(--well);
+  border:1px solid var(--edge)}
+input[type=range]::-webkit-slider-thumb{appearance:none;width:26px;height:26px;margin-top:-11px;
+  border-radius:6px;background:#f3f1ed;border:1px solid var(--edge);box-shadow:0 2px 0 #a5a29b}
+select{background:#f3f1ed;color:var(--ink);border:1px solid var(--edge);border-radius:10px;
+  padding:10px;font-family:inherit;font-size:11px;letter-spacing:.08em;flex:1;
+  box-shadow:0 2px 0 #a5a29b}
+.hint{font-size:9px;color:var(--dim);letter-spacing:.1em;text-align:center;text-transform:uppercase}
+.legend{display:flex;gap:12px;justify-content:center;font-size:8px;color:var(--dim);letter-spacing:.12em}
+.chip{display:inline-block;width:8px;height:8px;border-radius:2px;vertical-align:-1px;margin-right:4px}
+/* rack (index) */
+.rack a.slot{display:flex;justify-content:space-between;align-items:center;gap:10px;
+  background:#f3f1ed;border:1px solid var(--edge);border-radius:12px;padding:12px 14px;
+  color:var(--ink);text-decoration:none;box-shadow:0 3px 0 #a5a29b,inset 0 1px 0 #fff}
+.rack a.slot:active{transform:translateY(2px);box-shadow:0 1px 0 #a5a29b}
+.slot .no{font-size:10px;color:var(--dim);letter-spacing:.14em;width:44px}
+.slot .nm{font-size:12px;font-weight:700;letter-spacing:.14em;flex:1}
+.slot .sp{font-size:8px;color:var(--dim);letter-spacing:.1em;text-align:right}

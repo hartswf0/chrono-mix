@@ -4,67 +4,76 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <link rel="icon" href="data:," />
-<title>Retro Cache — Camera</title>
-<link rel="stylesheet" href="demo.css" />
+<title>RC-1 CAM</title>
+<link rel="stylesheet" href="instrument.css" />
 </head>
 <body>
-<div class="app">
-  <section class="panel">
-    <div class="row spread">
-      <h1>RETRO CACHE · CAMERA</h1>
-      <span class="state" id="stateBadge">IDLE</span>
+<div class="device">
+  <section class="mod">
+    <div class="head">
+      <div>
+        <div class="brand">RETRO CACHE</div>
+        <a class="model" href="index.html">RC-1 · CAM · 24 FPS · 4 S PRE-ROLL</a>
+      </div>
+      <div class="leds">
+        <span class="led" id="stbyLed"><i></i>STBY</span>
+        <span class="led rec" id="recLed"><i></i>REC</span>
+      </div>
     </div>
     <video id="cam" playsinline muted hidden></video>
-    <canvas id="liveView" class="cv" width="480" height="360"></canvas>
-    <div class="row">
-      <button class="btn arm" id="armBtn">ARM CACHE</button>
-      <button class="btn hot" id="trigBtn" disabled>TRIGGER</button>
-      <button class="btn" id="stopBtn" disabled>STOP</button>
+    <canvas id="liveView" class="screen" width="480" height="360"></canvas>
+    <div class="bars">
+      <div class="bar"><span>RING</span><canvas id="ringBar" width="240" height="12"></canvas></div>
+      <div class="bar"><span>QUEUE</span><canvas id="queueBar" width="240" height="12"></canvas></div>
     </div>
-    <div class="tiny" id="statsLine">—</div>
-    <div class="tiny" id="msgLine">
-      Real camera feed, 24 fps thumbnails into a 4 s pre-roll ring. ARM asks
-      for camera permission; nothing is persisted until TRIGGER, which
-      recovers the 4 s you already missed. <a href="index.html">← all sensors</a>
+    <div class="lcds">
+      <div class="lcd"><label>LOOK S</label><b id="lookLcd">0.0</b></div>
+      <div class="lcd"><label>FPS</label><b id="fpsLcd">--</b></div>
+      <div class="lcd"><label>PERS</label><b id="persLcd">0</b></div>
+      <div class="lcd"><label>DROP</label><b id="dropLcd">0</b></div>
+      <div class="lcd wide"><label>STATUS</label><b id="errLcd">READY</b></div>
+    </div>
+    <div class="keys">
+      <button class="key armk" id="armBtn">ARM</button>
+      <button class="key trig" id="trigBtn" disabled>TRIG</button>
+      <button class="key" id="stopBtn" disabled>STOP</button>
     </div>
   </section>
-  <section class="panel">
-    <div class="legend">
-      <span><span class="chip" style="background:var(--accent)"></span>cache (pre-roll)</span>
-      <span><span class="chip" style="background:var(--hot)"></span>live (after trigger)</span>
-    </div>
-    <canvas id="playView" class="cv pixel" width="480" height="360"></canvas>
+
+  <section class="mod">
+    <canvas id="playView" class="screen pixel" width="480" height="360"></canvas>
     <div class="row">
-      <button class="btn" id="playBtn" disabled>PLAY</button>
+      <button class="key small" id="playBtn" disabled>PLAY</button>
       <input type="range" id="scrub" min="0" max="0" value="0" disabled />
+      <button class="key small" id="pngBtn" disabled>PNG</button>
     </div>
-    <div class="tiny" id="frameLine">Persisted frames appear here after STOP — scrub through the recovered past.</div>
+    <div class="lcds">
+      <div class="lcd wide"><label>FRAME</label><b id="frameLcd">--</b></div>
+    </div>
+    <div class="legend">
+      <span><span class="chip" style="background:var(--cache)"></span>CACHE</span>
+      <span><span class="chip" style="background:var(--live)"></span>LIVE</span>
+    </div>
   </section>
 </div>
 
 <script type="module">
 import { RetroCaptureEngine, MemorySink, State } from './retrocache.js';
-import { makeTimestamper, wireStatus } from './demo-ui.js';
+import { makeTimestamper, download } from './demo-ui.js';
+import { wirePanel, wireTransport } from './instrument.js';
 
 const FPS = 24, PREROLL_S = 4, TW = 96, TH = 72, SLOT = TW * TH * 3;
+const $ = (id) => document.getElementById(id);
 
-const cam = document.getElementById('cam');
-const live = document.getElementById('liveView'); const lctx = live.getContext('2d');
-const play = document.getElementById('playView'); const pctx = play.getContext('2d');
-const armBtn = document.getElementById('armBtn');
-const trigBtn = document.getElementById('trigBtn');
-const stopBtn = document.getElementById('stopBtn');
-const playBtn = document.getElementById('playBtn');
-const scrub = document.getElementById('scrub');
-const msgLine = document.getElementById('msgLine');
-const frameLine = document.getElementById('frameLine');
+const cam = $('cam');
+const live = $('liveView'); const lctx = live.getContext('2d');
+const play = $('playView'); const pctx = play.getContext('2d');
 
 const sink = new MemorySink();
 const engine = new RetroCaptureEngine({
   frameRate: FPS, prerollSeconds: PREROLL_S, slotBytes: SLOT, sink,
   onWarn: (code, d) => console.warn('[retrocache]', code, d),
 });
-wireStatus(() => engine, document.getElementById('stateBadge'), document.getElementById('statsLine'));
 
 const now = makeTimestamper();
 const thumb = document.createElement('canvas');
@@ -73,16 +82,17 @@ const tctx = thumb.getContext('2d', { willReadFrequently: true });
 const payload = new Uint8Array(SLOT);
 
 let stream = null;
-let lastCapture = 0;
+let lastCapture = 0, fpsEma = 0;
 
 function loop(t) {
   if (cam.videoWidth) {
     lctx.drawImage(cam, 0, 0, live.width, live.height);
     if (engine.state === State.ACTIVE_RECORDING) {
-      lctx.fillStyle = '#fb6597';
+      lctx.fillStyle = '#ff4f00';
       lctx.beginPath(); lctx.arc(live.width - 20, 20, 7, 0, Math.PI * 2); lctx.fill();
     }
     if (engine.state !== State.IDLE && t - lastCapture >= 1000 / FPS - 1) {
+      fpsEma = fpsEma ? fpsEma * 0.9 + (1000 / (t - lastCapture)) * 0.1 : FPS;
       lastCapture = t;
       tctx.drawImage(cam, 0, 0, TW, TH);
       const rgba = tctx.getImageData(0, 0, TW, TH).data;
@@ -96,14 +106,23 @@ function loop(t) {
 }
 requestAnimationFrame(loop);
 
+wirePanel(() => engine, {
+  stbyLed: $('stbyLed'), recLed: $('recLed'),
+  lookLcd: $('lookLcd'), persLcd: $('persLcd'), dropLcd: $('dropLcd'),
+  ringBar: $('ringBar'), queueBar: $('queueBar'),
+  extra: () => { $('fpsLcd').textContent = engine.state === State.IDLE ? '--' : fpsEma.toFixed(1); },
+});
+
 const playImg = pctx.createImageData(TW, TH);
 const playBuf = document.createElement('canvas');
 playBuf.width = TW; playBuf.height = TH;
 const pbctx = playBuf.getContext('2d');
+let shownIdx = 0;
 
 function showFrame(i) {
   const f = sink.frames[i];
   if (!f) return;
+  shownIdx = i;
   for (let p = 0, j = 0; j < SLOT; p += 4) {
     playImg.data[p] = f.bytes[j++]; playImg.data[p + 1] = f.bytes[j++];
     playImg.data[p + 2] = f.bytes[j++]; playImg.data[p + 3] = 255;
@@ -115,26 +134,32 @@ function showFrame(i) {
   pctx.lineWidth = 4;
   pctx.strokeRect(2, 2, play.width - 4, play.height - 4);
   const dt = (f.meta.timestampUs - f.meta.triggerTimestampUs) / 1e6;
-  frameLine.textContent =
-    `frame ${i + 1}/${sink.frames.length} · id ${f.meta.frameId} · origin ${f.meta.origin} · ` +
-    `T${dt >= 0 ? '+' : ''}${dt.toFixed(2)}s` + (f.meta.gapBefore ? ` · ${f.meta.gapBefore} dropped before` : '');
+  $('frameLcd').textContent =
+    `${String(i + 1).padStart(3, '0')}/${String(sink.frames.length).padStart(3, '0')} ` +
+    `· ${f.meta.origin.toUpperCase()} · T${dt >= 0 ? '+' : ''}${dt.toFixed(2)}S` +
+    (f.meta.gapBefore ? ` · GAP ${f.meta.gapBefore}` : '');
 }
 
 let playTimer = null;
-playBtn.onclick = () => {
-  if (playTimer) { clearInterval(playTimer); playTimer = null; playBtn.textContent = 'PLAY'; return; }
-  playBtn.textContent = 'PAUSE';
+$('playBtn').onclick = () => {
+  const btn = $('playBtn');
+  if (playTimer) { clearInterval(playTimer); playTimer = null; btn.textContent = 'PLAY'; return; }
+  btn.textContent = 'STOP';
   playTimer = setInterval(() => {
-    let i = (Number(scrub.value) + 1) % sink.frames.length;
-    scrub.value = i;
+    const i = (Number($('scrub').value) + 1) % sink.frames.length;
+    $('scrub').value = i;
     showFrame(i);
   }, 1000 / FPS);
 };
-scrub.oninput = () => showFrame(Number(scrub.value));
+$('scrub').oninput = () => showFrame(Number($('scrub').value));
+$('pngBtn').onclick = () => play.toBlob((b) => {
+  const f = sink.frames[shownIdx];
+  download(`rc1-frame-${f.meta.frameId}.png`, b);
+});
 
-armBtn.onclick = async () => {
-  armBtn.disabled = true;
-  try {
+wireTransport({
+  arm: $('armBtn'), trig: $('trigBtn'), stop: $('stopBtn'), errLcd: $('errLcd'),
+  onArm: async () => {
     if (!stream) {
       stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 640 } }, audio: false,
@@ -143,26 +168,20 @@ armBtn.onclick = async () => {
       await cam.play();
     }
     sink.frames.length = 0;
-    if (playTimer) { clearInterval(playTimer); playTimer = null; playBtn.textContent = 'PLAY'; }
+    if (playTimer) { clearInterval(playTimer); playTimer = null; $('playBtn').textContent = 'PLAY'; }
+    $('playBtn').disabled = $('scrub').disabled = $('pngBtn').disabled = true;
     engine.arm();
-    trigBtn.disabled = false; stopBtn.disabled = true;
-    playBtn.disabled = true; scrub.disabled = true;
-  } catch (e) {
-    msgLine.innerHTML = `<span class="err">camera unavailable: ${e.message}</span>`;
-    armBtn.disabled = false;
-  }
-};
-trigBtn.onclick = () => { engine.trigger(); trigBtn.disabled = true; stopBtn.disabled = false; };
-stopBtn.onclick = async () => {
-  stopBtn.disabled = true;
-  await engine.stop();
-  armBtn.disabled = false;
-  if (sink.frames.length) {
-    scrub.max = sink.frames.length - 1; scrub.value = 0;
-    scrub.disabled = false; playBtn.disabled = false;
-    showFrame(0);
-  }
-};
+  },
+  onTrig: () => engine.trigger(),
+  onStop: async () => {
+    await engine.stop();
+    if (sink.frames.length) {
+      $('scrub').max = sink.frames.length - 1; $('scrub').value = 0;
+      $('scrub').disabled = $('playBtn').disabled = $('pngBtn').disabled = false;
+      showFrame(0);
+    }
+  },
+});
 </script>
 </body>
 </html>

@@ -81,32 +81,34 @@ ACTIVE_RECORDING ingest writes exclusively to the live arena.
 - `verify.mjs` — verification harness: `node retrocache/verify.mjs`
   (38 checks over continuity, lookback, monotonicity, backpressure,
   zero-copy aliasing, state guards, clock/rate faults, bounded memory).
-- `demo.html` — synthetic demo: a 30 fps canvas sensor with a 2 s pre-roll
-  ring; no permissions needed anywhere.
+## Instruments
 
-## Sensor trials
+`index.html` is the rack: one instrument per browser-accessible sensor
+feed, all driving the same engine. Each is styled as a hardware capture
+device — LED status, LCD readouts, segment-bar ring/queue meters, and a
+physical ARM / TRIG / STOP transport — with minimal text: the operator
+arms the cache, lets the moment happen, then triggers to recover it.
+Serve the repo over HTTP (`python3 -m http.server`); on phones the sensor
+APIs require HTTPS.
 
-`index.html` links one trial page per browser-accessible sensor feed, all
-driving the same engine (serve the repo over HTTP — `python3 -m
-http.server` — and open `/retrocache/`; on phones the sensor APIs require
-HTTPS):
+- `camera.html` — **RC-1 CAM**: rear camera via `getUserMedia`, 24 fps
+  thumbnails, 4 s pre-roll; scrub/replay the recovered frames, PNG export.
+- `audio.html` — **RC-2 MIC**: microphone PCM in ~43 ms chunks, 10 s
+  pre-roll, level meter; playback and WAV export.
+- `motion.html` — **RC-3 IMU**: `devicemotion`/`deviceorientation`
+  (~60 Hz, 12 channels), 15 s pre-roll, live |a| readout; stacked-lane
+  plot and CSV export. Handles the iOS motion-permission prompt on ARM;
+  the SYN key latches a synthetic source for machines without an IMU.
+- `sensors.html` — **RC-4 LAB**: source-adapter deck for pointer/touch,
+  geolocation, Generic Sensor API feeds (gyroscope, magnetometer, ambient
+  light) and battery, each with its own rate and pre-roll depth; trace
+  plot + CSV.
+- `demo.html` — **RC-0 SYN**: synthetic canvas sensor, no permissions.
+- Chassis and panel wiring live in `instrument.css` / `instrument.js`
+  (LEDs, LCDs, segment meters, transport); `demo-ui.js` holds the
+  monotonic µs timestamper, stacked-lane plotting, and CSV/WAV encoders.
 
-- `camera.html` — rear camera via `getUserMedia`, 24 fps thumbnails, 4 s
-  pre-roll; scrub/replay the recovered frames.
-- `audio.html` — microphone PCM in ~43 ms chunks, 10 s pre-roll; play back
-  the recovered audio or download it as WAV.
-- `motion.html` — IMU via `devicemotion`/`deviceorientation` (~60 Hz,
-  12 channels), 15 s pre-roll; stacked-lane trace plot and CSV export.
-  Handles the iOS motion-permission prompt on ARM and offers a synthetic
-  source for desktops without an IMU.
-- `sensors.html` — a source-adapter lab for everything else: pointer/touch,
-  geolocation (`watchPosition`), Generic Sensor API feeds (gyroscope,
-  magnetometer, ambient light) and battery. Unsupported sources on the
-  current device are greyed out; each persists to the same trace plot +
-  CSV.
-- Shared chrome lives in `demo.css` and `demo-ui.js` (status wiring,
-  monotonic µs timestamper, stacked-lane plotting, CSV/WAV encoding).
-
-All trial pages were exercised headlessly (fake camera/microphone devices,
-synthetic IMU, scripted pointer input) with a full
-ARM → TRIGGER → STOP cycle and zero console errors.
+All instruments were exercised headlessly (fake camera/microphone devices,
+synthetic IMU, scripted pointer input) through full ARM → TRIG → STOP
+cycles with zero console errors; engine state is mirrored onto
+`<body data-state>` for scripting.

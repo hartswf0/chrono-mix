@@ -4,37 +4,42 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <link rel="icon" href="data:," />
-<title>Retro Cache — Sensor Trials</title>
-<link rel="stylesheet" href="demo.css" />
+<title>Retro Cache Rack</title>
+<link rel="stylesheet" href="instrument.css" />
 </head>
 <body>
-<div class="app">
-  <section class="panel">
-    <h1>RETRO CACHE · SENSOR TRIALS</h1>
-    <div class="tiny">
-      One engine, every stream the browser can reach. Each page keeps the
-      last N seconds of a sensor in a pre-allocated ring buffer, persisting
-      nothing — until you hit TRIGGER, and the past you already missed is
-      recovered and piped ahead of the live stream. Grant each sensor's
-      permission when the page asks; on phones, serve over HTTPS.
+<div class="device">
+  <section class="mod rack">
+    <div class="head">
+      <div>
+        <div class="brand">RETRO CACHE</div>
+        <div class="model">RECORD THE PAST · ARM → TRIG → STOP</div>
+      </div>
+      <div class="leds">
+        <span class="led on"><i></i>PWR</span>
+      </div>
     </div>
-    <div class="cards">
-      <a class="card" href="camera.html"><b>CAMERA</b><br />
-        <span class="tiny">Rear camera at 24 fps, 4 s pre-roll. Scrub and replay the recovered frames.</span></a>
-      <a class="card" href="audio.html"><b>MICROPHONE</b><br />
-        <span class="tiny">Live PCM, 10 s pre-roll. Play back and download the WAV of what was just said.</span></a>
-      <a class="card" href="motion.html"><b>IMU / MOTION</b><br />
-        <span class="tiny">Accelerometer, gyroscope, orientation at ~60 Hz, 15 s pre-roll. CSV export. Synthetic mode for desktops.</span></a>
-      <a class="card" href="sensors.html"><b>SENSOR LAB</b><br />
-        <span class="tiny">Pointer/touch, geolocation, gyroscope, magnetometer, ambient light, battery — pick a feed, same engine.</span></a>
-      <a class="card" href="demo.html"><b>SYNTHETIC</b><br />
-        <span class="tiny">The original canvas demo — no permissions needed anywhere.</span></a>
-    </div>
-    <div class="tiny">
-      Engine: <a href="retrocache.js">retrocache.js</a> ·
-      harness: <code>node retrocache/verify.mjs</code> ·
-      docs: <a href="README.md">README</a>
-    </div>
+    <a class="slot" href="camera.html">
+      <span class="no">RC-1</span><span class="nm">CAM</span>
+      <span class="sp">CAMERA · 24 FPS<br />4 S PRE-ROLL · PNG</span>
+    </a>
+    <a class="slot" href="audio.html">
+      <span class="no">RC-2</span><span class="nm">MIC</span>
+      <span class="sp">MICROPHONE · PCM<br />10 S PRE-ROLL · WAV</span>
+    </a>
+    <a class="slot" href="motion.html">
+      <span class="no">RC-3</span><span class="nm">IMU</span>
+      <span class="sp">ACCEL+GYRO+ORI · 60 HZ<br />15 S PRE-ROLL · CSV</span>
+    </a>
+    <a class="slot" href="sensors.html">
+      <span class="no">RC-4</span><span class="nm">LAB</span>
+      <span class="sp">PTR GPS GYR MAG LUX BAT<br />PER-SOURCE · CSV</span>
+    </a>
+    <a class="slot" href="demo.html">
+      <span class="no">RC-0</span><span class="nm">SYN</span>
+      <span class="sp">SYNTHETIC · NO PERMISSIONS<br />2 S PRE-ROLL</span>
+    </a>
+    <div class="hint">HTTPS required for sensors on phones · engine: retrocache.js · verify: node retrocache/verify.mjs</div>
   </section>
 </div>
 </body>
