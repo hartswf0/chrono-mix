@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Retroactive Cache Recorder — Pre-Roll Demo</title>
+<style>
+  :root{ --bg:#0b0c0f; --fg:#e6e6e6; --line:#1f2533; --accent:#65fbd2; --hot:#fb6597; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;min-height:100%;background:var(--bg);color:var(--fg);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .app{display:flex;flex-direction:column;gap:8px;padding:8px;max-width:640px;margin:0 auto}
+  .panel{border:1px solid var(--line);border-radius:14px;background:#0f131b;padding:8px;display:flex;flex-direction:column;gap:8px}
+  .live{width:100%;aspect-ratio:2;background:#000;border-radius:10px}
+  .row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .btn{border:1px solid #1c2330;background:#141923;color:#cfe1f2;border-radius:10px;padding:8px 14px;min-height:36px;font-family:inherit;font-size:13px}
+  .btn:disabled{opacity:.35}
+  .btn.hot{border-color:var(--hot);color:var(--hot)}
+  .btn.arm{border-color:var(--accent);color:var(--accent)}
+  .tiny{font-size:11px;color:#9aa0a6;line-height:1.6}
+  .state{font-size:12px;padding:3px 8px;border-radius:8px;border:1px solid var(--line)}
+  .state.STANDBY_CACHING{border-color:var(--accent);color:var(--accent)}
+  .state.ACTIVE_RECORDING{border-color:var(--hot);color:var(--hot)}
+  .strip{width:100%;background:#000;border-radius:10px;image-rendering:pixelated}
+  h1{font-size:14px;margin:0;font-weight:600;letter-spacing:.06em}
+  .legend{display:flex;gap:14px;font-size:11px;color:#9aa0a6}
+  .chip{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px;margin-right:4px}
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="panel">
+    <div class="row" style="justify-content:space-between">
+      <h1>RETRO CACHE RECORDER</h1>
+      <span class="state" id="stateBadge">IDLE</span>
+    </div>
+    <canvas id="liveView" class="live" width="480" height="240"></canvas>
+    <div class="row">
+      <button class="btn arm" id="armBtn">ARM CACHE</button>
+      <button class="btn hot" id="trigBtn" disabled>TRIGGER</button>
+      <button class="btn" id="stopBtn" disabled>STOP</button>
+    </div>
+    <div class="tiny" id="statsLine">—</div>
+    <div class="tiny">
+      30 fps synthetic sensor · 2 s pre-roll ring (60 slots) · nothing is
+      persisted in standby. TRIGGER drains the last 2 s retroactively, then
+      pipes live frames behind it. STOP flushes and lays out the persisted
+      sequence below.
+    </div>
+  </section>
+  <section class="panel">
+    <div class="legend">
+      <span><span class="chip" style="background:var(--accent)"></span>cache (pre-roll, before trigger)</span>
+      <span><span class="chip" style="background:var(--hot)"></span>live (after trigger)</span>
+    </div>
+    <canvas id="stripView" class="strip" width="480" height="120"></canvas>
+    <div class="tiny" id="stripLine">Persisted output appears here after STOP.</div>
+  </section>
+</div>
+
+<script type="module">
+import { RetroCaptureEngine, MemorySink, State, Origin } from './retrocache.js';
+
+const FPS = 30, PREROLL_S = 2, THUMB = 48, SLOT = THUMB * THUMB; // grayscale thumb per frame
+
+const live = document.getElementById('liveView');
+const lctx = live.getContext('2d');
+const strip = document.getElementById('stripView');
+const sctx = strip.getContext('2d');
+const badge = document.getElementById('stateBadge');
+const statsLine = document.getElementById('statsLine');
+const stripLine = document.getElementById('stripLine');
+const armBtn = document.getElementById('armBtn');
+const trigBtn = document.getElementById('trigBtn');
+const stopBtn = document.getElementById('stopBtn');
+
+let sink = new MemorySink();
+const engine = new RetroCaptureEngine({
+  frameRate: FPS, prerollSeconds: PREROLL_S, slotBytes: SLOT, sink,
+  onWarn: (code, d) => console.warn('[retrocache]', code, d),
+});
+
+// Off-screen downsample target; the reused payload keeps ingest allocation-free.
+const thumb = document.createElement('canvas');
+thumb.width = THUMB; thumb.height = THUMB;
+const tctx = thumb.getContext('2d', { willReadFrequently: true });
+const payload = new Uint8Array(SLOT);
+
+let frameNo = 0;
+function drawScene(t) {
+  const w = live.width, h = live.height;
+  lctx.fillStyle = '#000'; lctx.fillRect(0, 0, w, h);
+  const cx = w / 2 + Math.sin(t / 700) * w * 0.3;
+  const cy = h / 2 + Math.cos(t / 530) * h * 0.25;
+  lctx.strokeStyle = '#65fbd2'; lctx.lineWidth = 3;
+  lctx.beginPath(); lctx.arc(cx, cy, 30 + 14 * Math.sin(t / 210), 0, Math.PI * 2); lctx.stroke();
+  lctx.strokeStyle = '#324';
+  lctx.beginPath(); lctx.arc(w / 2, h / 2, 80, t / 900, t / 900 + 4); lctx.stroke();
+  lctx.fillStyle = '#cfe1f2'; lctx.font = '16px ui-monospace,monospace';
+  lctx.fillText(String(frameNo).padStart(5, '0'), 10, 22);
+}
+
+function captureFrame(nowMs) {
+  tctx.drawImage(live, 0, 0, THUMB, THUMB);
+  const rgba = tctx.getImageData(0, 0, THUMB, THUMB).data;
+  for (let i = 0; i < SLOT; i++) payload[i] = rgba[i * 4 + 1]; // green channel ≈ luma here
+  engine.ingest(nowMs * 1000, payload);
+  frameNo++;
+}
+
+let lastCapture = 0;
+function loop(t) {
+  drawScene(t);
+  if (t - lastCapture >= 1000 / FPS - 1) { lastCapture = t; captureFrame(t); }
+  const s = engine.stats;
+  badge.textContent = engine.state;
+  badge.className = 'state ' + engine.state;
+  statsLine.textContent =
+    `cache ${s.cacheDepth}/${engine.cacheCapacity} · queue ${s.liveQueueDepth} · ` +
+    `persisted ${s.persistedCache + s.persistedLive} (${s.persistedCache} cache / ${s.persistedLive} live) · ` +
+    `dropped ${s.dropped} · lookback ${engine.effectivePrerollSeconds().toFixed(2)}s`;
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+function renderStrip() {
+  const frames = sink.frames;
+  sctx.fillStyle = '#000'; sctx.fillRect(0, 0, strip.width, strip.height);
+  if (frames.length === 0) return;
+  const cols = Math.min(frames.length, 16);
+  const rows = Math.ceil(frames.length / cols);
+  const cw = strip.width / cols, ch = Math.min(cw, strip.height / rows);
+  strip.height = Math.max(120, Math.ceil(rows * ch));
+  sctx.fillStyle = '#000'; sctx.fillRect(0, 0, strip.width, strip.height);
+  const img = sctx.createImageData(THUMB, THUMB);
+  frames.forEach((f, i) => {
+    for (let p = 0; p < SLOT; p++) {
+      const v = f.bytes[p];
+      img.data[p * 4] = v; img.data[p * 4 + 1] = v; img.data[p * 4 + 2] = v; img.data[p * 4 + 3] = 255;
+    }
+    const x = (i % cols) * cw, y = Math.floor(i / cols) * ch;
+    createImageBitmap(img).then((bmp) => {
+      sctx.drawImage(bmp, x + 1, y + 1, cw - 2, ch - 2);
+      sctx.strokeStyle = f.meta.origin === Origin.CACHE ? '#65fbd2' : '#fb6597';
+      sctx.strokeRect(x + 0.5, y + 0.5, cw - 1, ch - 1);
+    });
+  });
+  const cache = frames.filter((f) => f.meta.origin === Origin.CACHE).length;
+  const span = (frames[frames.length - 1].meta.timestampUs - frames[0].meta.timestampUs) / 1e6;
+  stripLine.textContent =
+    `${frames.length} frames persisted (${cache} recovered retroactively) · ` +
+    `${span.toFixed(2)}s continuous · ids ${frames[0].meta.frameId}…${frames[frames.length - 1].meta.frameId}`;
+}
+
+armBtn.onclick = () => {
+  sink.frames.length = 0;
+  engine.arm();
+  armBtn.disabled = true; trigBtn.disabled = false; stopBtn.disabled = true;
+};
+trigBtn.onclick = () => {
+  engine.trigger();
+  trigBtn.disabled = true; stopBtn.disabled = false;
+};
+stopBtn.onclick = async () => {
+  stopBtn.disabled = true;
+  await engine.stop();
+  renderStrip();
+  armBtn.disabled = false;
+};
+</script>
+</body>
+</html>
