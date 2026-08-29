@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<link rel="icon" href="data:," />
+<title>Retro Cache — IMU</title>
+<link rel="stylesheet" href="demo.css" />
+</head>
+<body>
+<div class="app">
+  <section class="panel">
+    <div class="row spread">
+      <h1>RETRO CACHE · IMU / MOTION</h1>
+      <span class="state" id="stateBadge">IDLE</span>
+    </div>
+    <canvas id="liveView" class="cv" width="480" height="140"></canvas>
+    <div class="row">
+      <button class="btn arm" id="armBtn">ARM CACHE</button>
+      <button class="btn hot" id="trigBtn" disabled>TRIGGER</button>
+      <button class="btn" id="stopBtn" disabled>STOP</button>
+      <label class="toggle"><input type="checkbox" id="synthChk" />synthetic (desktop test)</label>
+    </div>
+    <div class="tiny" id="statsLine">—</div>
+    <div class="tiny" id="msgLine">
+      Accelerometer + gyroscope + orientation at device rate (~60 Hz), 15 s
+      pre-roll ring. Shake the phone, <em>then</em> hit TRIGGER — the motion
+      that already happened is recovered. iOS asks for motion permission on
+      ARM. <a href="index.html">← all sensors</a>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="legend">
+      <span><span class="chip" style="background:var(--accent)"></span>cache (pre-roll)</span>
+      <span><span class="chip" style="background:var(--hot)"></span>live (after trigger)</span>
+      <span><span class="chip" style="background:#ff3b3b"></span>drop gap</span>
+    </div>
+    <canvas id="plotView" class="cv" width="480" height="336"></canvas>
+    <div class="row"><button class="btn" id="csvBtn" disabled>DOWNLOAD CSV</button></div>
+    <div class="tiny" id="outLine">Persisted traces appear here after STOP.</div>
+  </section>
+</div>
+
+<script type="module">
+import { RetroCaptureEngine, MemorySink, State } from './retrocache.js';
+import { makeTimestamper, wireStatus, plotFrames, framesToCSV, download } from './demo-ui.js';
+
+const RATE = 60, PREROLL_S = 15;
+const CHANNELS = ['acc_x','acc_y','acc_z','accg_x','accg_y','accg_z','rot_a','rot_b','rot_g','ori_a','ori_b','ori_g'];
+
+const live = document.getElementById('liveView'); const lctx = live.getContext('2d');
+const plot = document.getElementById('plotView');
+const armBtn = document.getElementById('armBtn');
+const trigBtn = document.getElementById('trigBtn');
+const stopBtn = document.getElementById('stopBtn');
+const csvBtn = document.getElementById('csvBtn');
+const synthChk = document.getElementById('synthChk');
+const msgLine = document.getElementById('msgLine');
+const outLine = document.getElementById('outLine');
+
+const sink = new MemorySink();
+const engine = new RetroCaptureEngine({
+  frameRate: RATE, prerollSeconds: PREROLL_S, slotBytes: CHANNELS.length * 4, sink,
+  onWarn: (code, d) => console.warn('[retrocache]', code, d),
+});
+wireStatus(() => engine, document.getElementById('stateBadge'), document.getElementById('statsLine'));
+
+const now = makeTimestamper();
+const payload = new Uint8Array(CHANNELS.length * 4);
+const payloadF32 = new Float32Array(payload.buffer);
+const orientation = [0, 0, 0];
+let sawRealEvent = false;
+
+lctx.fillStyle = '#000'; lctx.fillRect(0, 0, live.width, live.height);
+
+function record(acc, accG, rot) {
+  payloadF32[0] = acc[0]; payloadF32[1] = acc[1]; payloadF32[2] = acc[2];
+  payloadF32[3] = accG[0]; payloadF32[4] = accG[1]; payloadF32[5] = accG[2];
+  payloadF32[6] = rot[0]; payloadF32[7] = rot[1]; payloadF32[8] = rot[2];
+  payloadF32[9] = orientation[0]; payloadF32[10] = orientation[1]; payloadF32[11] = orientation[2];
+  if (engine.state !== State.IDLE) engine.ingest(now(), payload);
+
+  // Rolling trace: |acceleration| (teal/pink) and |rotation| (dim) columns.
+  lctx.drawImage(live, -1, 0);
+  lctx.fillStyle = '#000'; lctx.fillRect(live.width - 1, 0, 1, live.height);
+  const aMag = Math.hypot(acc[0], acc[1], acc[2]);
+  const rMag = Math.hypot(rot[0], rot[1], rot[2]);
+  const h = live.height;
+  lctx.fillStyle = '#39424f';
+  lctx.fillRect(live.width - 1, h - Math.min(h, (rMag / 400) * h), 1, 3);
+  lctx.fillStyle = engine.state === State.ACTIVE_RECORDING ? '#fb6597' : '#65fbd2';
+  lctx.fillRect(live.width - 1, h - Math.min(h, (aMag / 25) * h), 1, 3);
+}
+
+window.addEventListener('deviceorientation', (e) => {
+  orientation[0] = e.alpha ?? 0; orientation[1] = e.beta ?? 0; orientation[2] = e.gamma ?? 0;
+});
+window.addEventListener('devicemotion', (e) => {
+  if (synthChk.checked) return;
+  sawRealEvent = true;
+  const a = e.acceleration ?? {}, g = e.accelerationIncludingGravity ?? {}, r = e.rotationRate ?? {};
+  record([a.x ?? 0, a.y ?? 0, a.z ?? 0], [g.x ?? 0, g.y ?? 0, g.z ?? 0], [r.alpha ?? 0, r.beta ?? 0, r.gamma ?? 0]);
+});
+
+// Synthetic source so the page is testable on machines without an IMU.
+let synthTimer = null, synthT = 0;
+synthChk.onchange = () => {
+  if (synthChk.checked && !synthTimer) {
+    synthTimer = setInterval(() => {
+      synthT += 1 / RATE;
+      const burst = Math.sin(synthT / 3) > 0.8 ? 6 : 0.4;
+      const acc = [
+        Math.sin(synthT * 9) * burst + (Math.random() - 0.5),
+        Math.cos(synthT * 7) * burst + (Math.random() - 0.5),
+        Math.sin(synthT * 5) * burst * 0.5,
+      ];
+      orientation[0] = (synthT * 20) % 360; orientation[1] = Math.sin(synthT) * 40; orientation[2] = Math.cos(synthT) * 30;
+      record(acc, [acc[0], acc[1], acc[2] + 9.81], [Math.cos(synthT * 8) * burst * 30, Math.sin(synthT * 6) * burst * 30, 0]);
+    }, 1000 / RATE);
+  } else if (!synthChk.checked && synthTimer) {
+    clearInterval(synthTimer); synthTimer = null;
+  }
+};
+
+armBtn.onclick = async () => {
+  armBtn.disabled = true;
+  try {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function' && !synthChk.checked) {
+      const ok = await DeviceMotionEvent.requestPermission();
+      if (ok !== 'granted') throw new Error('motion permission denied');
+      if (typeof DeviceOrientationEvent?.requestPermission === 'function') {
+        await DeviceOrientationEvent.requestPermission().catch(() => {});
+      }
+    }
+    sink.frames.length = 0;
+    engine.arm();
+    trigBtn.disabled = false; stopBtn.disabled = true; csvBtn.disabled = true;
+    if (!synthChk.checked) {
+      setTimeout(() => {
+        if (!sawRealEvent && engine.state !== State.IDLE) {
+          msgLine.innerHTML = '<span class="err">no devicemotion events — this device has no IMU; tick "synthetic" to test.</span>';
+        }
+      }, 1500);
+    }
+  } catch (e) {
+    msgLine.innerHTML = `<span class="err">motion unavailable: ${e.message}</span>`;
+    armBtn.disabled = false;
+  }
+};
+trigBtn.onclick = () => { engine.trigger(); trigBtn.disabled = true; stopBtn.disabled = false; };
+stopBtn.onclick = async () => {
+  stopBtn.disabled = true;
+  await engine.stop();
+  armBtn.disabled = false;
+  plotFrames(plot, sink.frames, [
+    { label: 'acc_x m/s²', index: 0 }, { label: 'acc_y m/s²', index: 1 }, { label: 'acc_z m/s²', index: 2 },
+    { label: 'rot_α °/s', index: 6 }, { label: 'rot_β °/s', index: 7 }, { label: 'rot_γ °/s', index: 8 },
+  ]);
+  csvBtn.disabled = sink.frames.length === 0;
+  if (sink.frames.length) {
+    const span = (sink.frames.at(-1).meta.timestampUs - sink.frames[0].meta.timestampUs) / 1e6;
+    const cache = sink.frames.filter((f) => f.meta.origin === 'cache').length;
+    outLine.textContent = `${sink.frames.length} samples persisted (${cache} recovered retroactively) · ${span.toFixed(2)}s continuous`;
+  }
+};
+csvBtn.onclick = () => download('retrocache-imu.csv', new Blob([framesToCSV(sink.frames, CHANNELS)], { type: 'text/csv' }));
+</script>
+</body>
+</html>

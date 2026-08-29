@@ -8,4 +8,6 @@ buffer with an {IDLE, STANDBY_CACHING, ACTIVE_RECORDING} state machine that
 records the N seconds *before* you hit the trigger, modeled on cinema-camera
 cache recording. See [retrocache/README.md](retrocache/README.md); run
 `node retrocache/verify.mjs` for the verification harness or serve the repo
-and open `retrocache/demo.html` for an interactive demo.
+and open `retrocache/` for trial pages covering every browser-accessible
+sensor: camera, microphone, IMU/accelerometer, pointer, geolocation,
+gyroscope, magnetometer, ambient light, and battery.

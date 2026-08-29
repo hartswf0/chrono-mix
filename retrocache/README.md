@@ -81,8 +81,32 @@ ACTIVE_RECORDING ingest writes exclusively to the live arena.
 - `verify.mjs` — verification harness: `node retrocache/verify.mjs`
   (38 checks over continuity, lookback, monotonicity, backpressure,
   zero-copy aliasing, state guards, clock/rate faults, bounded memory).
-- `demo.html` — interactive demo: a 30 fps synthetic sensor with a 2 s
-  pre-roll ring. ARM, wait, TRIGGER after the moment has already happened,
-  STOP — the filmstrip shows the retroactively recovered frames (teal)
-  ahead of the live ones (pink). Serve the repo root over HTTP (e.g.
-  `python3 -m http.server`) and open `/retrocache/demo.html`.
+- `demo.html` — synthetic demo: a 30 fps canvas sensor with a 2 s pre-roll
+  ring; no permissions needed anywhere.
+
+## Sensor trials
+
+`index.html` links one trial page per browser-accessible sensor feed, all
+driving the same engine (serve the repo over HTTP — `python3 -m
+http.server` — and open `/retrocache/`; on phones the sensor APIs require
+HTTPS):
+
+- `camera.html` — rear camera via `getUserMedia`, 24 fps thumbnails, 4 s
+  pre-roll; scrub/replay the recovered frames.
+- `audio.html` — microphone PCM in ~43 ms chunks, 10 s pre-roll; play back
+  the recovered audio or download it as WAV.
+- `motion.html` — IMU via `devicemotion`/`deviceorientation` (~60 Hz,
+  12 channels), 15 s pre-roll; stacked-lane trace plot and CSV export.
+  Handles the iOS motion-permission prompt on ARM and offers a synthetic
+  source for desktops without an IMU.
+- `sensors.html` — a source-adapter lab for everything else: pointer/touch,
+  geolocation (`watchPosition`), Generic Sensor API feeds (gyroscope,
+  magnetometer, ambient light) and battery. Unsupported sources on the
+  current device are greyed out; each persists to the same trace plot +
+  CSV.
+- Shared chrome lives in `demo.css` and `demo-ui.js` (status wiring,
+  monotonic µs timestamper, stacked-lane plotting, CSV/WAV encoding).
+
+All trial pages were exercised headlessly (fake camera/microphone devices,
+synthetic IMU, scripted pointer input) with a full
+ARM → TRIGGER → STOP cycle and zero console errors.

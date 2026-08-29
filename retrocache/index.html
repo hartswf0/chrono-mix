@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<link rel="icon" href="data:," />
+<title>Retro Cache — Sensor Trials</title>
+<link rel="stylesheet" href="demo.css" />
+</head>
+<body>
+<div class="app">
+  <section class="panel">
+    <h1>RETRO CACHE · SENSOR TRIALS</h1>
+    <div class="tiny">
+      One engine, every stream the browser can reach. Each page keeps the
+      last N seconds of a sensor in a pre-allocated ring buffer, persisting
+      nothing — until you hit TRIGGER, and the past you already missed is
+      recovered and piped ahead of the live stream. Grant each sensor's
+      permission when the page asks; on phones, serve over HTTPS.
+    </div>
+    <div class="cards">
+      <a class="card" href="camera.html"><b>CAMERA</b><br />
+        <span class="tiny">Rear camera at 24 fps, 4 s pre-roll. Scrub and replay the recovered frames.</span></a>
+      <a class="card" href="audio.html"><b>MICROPHONE</b><br />
+        <span class="tiny">Live PCM, 10 s pre-roll. Play back and download the WAV of what was just said.</span></a>
+      <a class="card" href="motion.html"><b>IMU / MOTION</b><br />
+        <span class="tiny">Accelerometer, gyroscope, orientation at ~60 Hz, 15 s pre-roll. CSV export. Synthetic mode for desktops.</span></a>
+      <a class="card" href="sensors.html"><b>SENSOR LAB</b><br />
+        <span class="tiny">Pointer/touch, geolocation, gyroscope, magnetometer, ambient light, battery — pick a feed, same engine.</span></a>
+      <a class="card" href="demo.html"><b>SYNTHETIC</b><br />
+        <span class="tiny">The original canvas demo — no permissions needed anywhere.</span></a>
+    </div>
+    <div class="tiny">
+      Engine: <a href="retrocache.js">retrocache.js</a> ·
+      harness: <code>node retrocache/verify.mjs</code> ·
+      docs: <a href="README.md">README</a>
+    </div>
+  </section>
+</div>
+</body>
+</html>

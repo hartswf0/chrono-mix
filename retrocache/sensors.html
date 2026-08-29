@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<link rel="icon" href="data:," />
+<title>Retro Cache — Sensor Lab</title>
+<link rel="stylesheet" href="demo.css" />
+</head>
+<body>
+<div class="app">
+  <section class="panel">
+    <div class="row spread">
+      <h1>RETRO CACHE · SENSOR LAB</h1>
+      <span class="state" id="stateBadge">IDLE</span>
+    </div>
+    <div class="row">
+      <select id="srcSelect"></select>
+      <span class="tiny" id="srcInfo"></span>
+    </div>
+    <canvas id="liveView" class="cv" width="480" height="100"></canvas>
+    <div class="tiny" id="readout">—</div>
+    <div class="row">
+      <button class="btn arm" id="armBtn">ARM CACHE</button>
+      <button class="btn hot" id="trigBtn" disabled>TRIGGER</button>
+      <button class="btn" id="stopBtn" disabled>STOP</button>
+    </div>
+    <div class="tiny" id="statsLine">—</div>
+    <div class="tiny" id="msgLine">
+      Every other stream the browser exposes, through the same pre-roll
+      engine: pointer/touch, geolocation, Generic Sensor API feeds, battery.
+      Unsupported sources on this device are greyed out.
+      <a href="index.html">← all sensors</a>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="legend">
+      <span><span class="chip" style="background:var(--accent)"></span>cache (pre-roll)</span>
+      <span><span class="chip" style="background:var(--hot)"></span>live (after trigger)</span>
+      <span><span class="chip" style="background:#ff3b3b"></span>drop gap</span>
+    </div>
+    <canvas id="plotView" class="cv" width="480" height="280"></canvas>
+    <div class="row"><button class="btn" id="csvBtn" disabled>DOWNLOAD CSV</button></div>
+    <div class="tiny" id="outLine">Persisted traces appear here after STOP.</div>
+  </section>
+</div>
+
+<script type="module">
+import { RetroCaptureEngine, MemorySink, State } from './retrocache.js';
+import { makeTimestamper, wireStatus, plotFrames, framesToCSV, download } from './demo-ui.js';
+
+/**
+ * A source adapter: nominal rate (Hz), pre-roll depth (s), channel labels,
+ * and start(cb)/stop() where cb(valuesArray) is called per sample.
+ */
+const SOURCES = {
+  pointer: {
+    label: 'Pointer / touch', rate: 60, preroll: 10,
+    channels: ['x', 'y', 'pressure', 'dx', 'dy'],
+    available: () => true,
+    hint: 'move finger/mouse anywhere on the page',
+    start(cb) {
+      this._h = (e) => cb([e.clientX, e.clientY, e.pressure ?? 0, e.movementX ?? 0, e.movementY ?? 0]);
+      window.addEventListener('pointermove', this._h);
+      window.addEventListener('pointerdown', this._h);
+    },
+    stop() { window.removeEventListener('pointermove', this._h); window.removeEventListener('pointerdown', this._h); },
+  },
+  geolocation: {
+    label: 'Geolocation', rate: 1, preroll: 300,
+    channels: ['lat', 'lon', 'accuracy_m', 'speed', 'heading'],
+    available: () => 'geolocation' in navigator,
+    hint: 'updates arrive on movement; 5 min pre-roll',
+    start(cb, onErr) {
+      this._id = navigator.geolocation.watchPosition(
+        (p) => cb([p.coords.latitude, p.coords.longitude, p.coords.accuracy,
+                   p.coords.speed ?? 0, p.coords.heading ?? 0]),
+        (e) => onErr(new Error(e.message)),
+        { enableHighAccuracy: true, maximumAge: 0 },
+      );
+    },
+    stop() { navigator.geolocation.clearWatch(this._id); },
+  },
+  gyroscope: {
+    label: 'Gyroscope (Generic Sensor)', rate: 60, preroll: 15,
+    channels: ['x_rad_s', 'y_rad_s', 'z_rad_s'],
+    available: () => 'Gyroscope' in window,
+    hint: 'rotate the device',
+    start(cb, onErr) {
+      this._s = new Gyroscope({ frequency: 60 });
+      this._s.onreading = () => cb([this._s.x, this._s.y, this._s.z]);
+      this._s.onerror = (e) => onErr(new Error(e.error?.message ?? 'sensor error'));
+      this._s.start();
+    },
+    stop() { this._s?.stop(); },
+  },
+  magnetometer: {
+    label: 'Magnetometer (Generic Sensor)', rate: 10, preroll: 60,
+    channels: ['x_uT', 'y_uT', 'z_uT'],
+    available: () => 'Magnetometer' in window,
+    hint: 'wave something magnetic past the phone',
+    start(cb, onErr) {
+      this._s = new Magnetometer({ frequency: 10 });
+      this._s.onreading = () => cb([this._s.x, this._s.y, this._s.z]);
+      this._s.onerror = (e) => onErr(new Error(e.error?.message ?? 'sensor error'));
+      this._s.start();
+    },
+    stop() { this._s?.stop(); },
+  },
+  ambientlight: {
+    label: 'Ambient light (Generic Sensor)', rate: 10, preroll: 60,
+    channels: ['illuminance_lux'],
+    available: () => 'AmbientLightSensor' in window,
+    hint: 'cover the light sensor, then trigger',
+    start(cb, onErr) {
+      this._s = new AmbientLightSensor({ frequency: 10 });
+      this._s.onreading = () => cb([this._s.illuminance]);
+      this._s.onerror = (e) => onErr(new Error(e.error?.message ?? 'sensor error'));
+      this._s.start();
+    },
+    stop() { this._s?.stop(); },
+  },
+  battery: {
+    label: 'Battery', rate: 1, preroll: 600,
+    channels: ['level_pct', 'charging'],
+    available: () => 'getBattery' in navigator,
+    hint: 'slow feed; 10 min pre-roll — plug/unplug, then trigger',
+    async start(cb) {
+      const b = await navigator.getBattery();
+      this._t = setInterval(() => cb([b.level * 100, b.charging ? 1 : 0]), 1000);
+    },
+    stop() { clearInterval(this._t); },
+  },
+};
+
+const srcSelect = document.getElementById('srcSelect');
+const srcInfo = document.getElementById('srcInfo');
+const live = document.getElementById('liveView'); const lctx = live.getContext('2d');
+const plot = document.getElementById('plotView');
+const readout = document.getElementById('readout');
+const armBtn = document.getElementById('armBtn');
+const trigBtn = document.getElementById('trigBtn');
+const stopBtn = document.getElementById('stopBtn');
+const csvBtn = document.getElementById('csvBtn');
+const msgLine = document.getElementById('msgLine');
+const outLine = document.getElementById('outLine');
+
+for (const [key, s] of Object.entries(SOURCES)) {
+  const opt = document.createElement('option');
+  opt.value = key;
+  opt.textContent = s.label + (s.available() ? '' : ' — unavailable');
+  opt.disabled = !s.available();
+  srcSelect.appendChild(opt);
+}
+srcSelect.value = [...srcSelect.options].find((o) => !o.disabled)?.value ?? 'pointer';
+
+let engine = null, source = null;
+const sink = new MemorySink();
+wireStatus(() => engine, document.getElementById('stateBadge'), document.getElementById('statsLine'));
+const now = makeTimestamper();
+let payload = null, payloadF32 = null, lastValues = null;
+
+function updateInfo() {
+  const s = SOURCES[srcSelect.value];
+  srcInfo.textContent = `${s.rate} Hz nominal · ${s.preroll}s pre-roll · ${s.hint}`;
+}
+srcSelect.onchange = updateInfo;
+updateInfo();
+
+lctx.fillStyle = '#000'; lctx.fillRect(0, 0, live.width, live.height);
+
+function onSample(values) {
+  lastValues = values;
+  const s = SOURCES[srcSelect.value];
+  readout.textContent = s.channels.map((c, i) => `${c}=${Number(values[i]).toPrecision(5)}`).join('  ');
+  if (!engine || engine.state === State.IDLE) return;
+  for (let i = 0; i < payloadF32.length; i++) payloadF32[i] = values[i] ?? 0;
+  engine.ingest(now(), payload);
+  // Rolling first-channel trace.
+  lctx.drawImage(live, -1, 0);
+  lctx.fillStyle = '#000'; lctx.fillRect(live.width - 1, 0, 1, live.height);
+  const v = values[0], norm = 1 / (1 + Math.exp(-v / 200)); // squash arbitrary ranges
+  lctx.fillStyle = engine.state === State.ACTIVE_RECORDING ? '#fb6597' : '#65fbd2';
+  lctx.fillRect(live.width - 1, live.height - norm * live.height, 1, 3);
+}
+
+function fail(e) {
+  msgLine.innerHTML = `<span class="err">${srcSelect.value}: ${e.message}</span>`;
+}
+
+armBtn.onclick = async () => {
+  armBtn.disabled = true;
+  srcSelect.disabled = true;
+  try {
+    source = SOURCES[srcSelect.value];
+    payload = new Uint8Array(source.channels.length * 4);
+    payloadF32 = new Float32Array(payload.buffer);
+    sink.frames.length = 0;
+    engine = new RetroCaptureEngine({
+      frameRate: source.rate, prerollSeconds: source.preroll,
+      slotBytes: payload.length, sink,
+      onWarn: (code, d) => console.warn('[retrocache]', code, d),
+    });
+    await source.start(onSample, fail);
+    engine.arm();
+    trigBtn.disabled = false; stopBtn.disabled = true; csvBtn.disabled = true;
+  } catch (e) {
+    fail(e);
+    armBtn.disabled = false;
+    srcSelect.disabled = false;
+  }
+};
+trigBtn.onclick = () => { engine.trigger(); trigBtn.disabled = true; stopBtn.disabled = false; };
+stopBtn.onclick = async () => {
+  stopBtn.disabled = true;
+  await engine.stop();
+  source.stop();
+  armBtn.disabled = false;
+  srcSelect.disabled = false;
+  plotFrames(plot, sink.frames, source.channels.map((label, index) => ({ label, index })));
+  csvBtn.disabled = sink.frames.length === 0;
+  if (sink.frames.length) {
+    const span = (sink.frames.at(-1).meta.timestampUs - sink.frames[0].meta.timestampUs) / 1e6;
+    const cache = sink.frames.filter((f) => f.meta.origin === 'cache').length;
+    outLine.textContent = `${sink.frames.length} samples persisted (${cache} recovered retroactively) · ${span.toFixed(2)}s continuous`;
+  } else {
+    outLine.textContent = 'nothing persisted — the source produced no samples.';
+  }
+};
+csvBtn.onclick = () => download(`retrocache-${srcSelect.value}.csv`,
+  new Blob([framesToCSV(sink.frames, source.channels)], { type: 'text/csv' }));
+</script>
+</body>
+</html>

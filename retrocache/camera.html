@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<link rel="icon" href="data:," />
+<title>Retro Cache — Camera</title>
+<link rel="stylesheet" href="demo.css" />
+</head>
+<body>
+<div class="app">
+  <section class="panel">
+    <div class="row spread">
+      <h1>RETRO CACHE · CAMERA</h1>
+      <span class="state" id="stateBadge">IDLE</span>
+    </div>
+    <video id="cam" playsinline muted hidden></video>
+    <canvas id="liveView" class="cv" width="480" height="360"></canvas>
+    <div class="row">
+      <button class="btn arm" id="armBtn">ARM CACHE</button>
+      <button class="btn hot" id="trigBtn" disabled>TRIGGER</button>
+      <button class="btn" id="stopBtn" disabled>STOP</button>
+    </div>
+    <div class="tiny" id="statsLine">—</div>
+    <div class="tiny" id="msgLine">
+      Real camera feed, 24 fps thumbnails into a 4 s pre-roll ring. ARM asks
+      for camera permission; nothing is persisted until TRIGGER, which
+      recovers the 4 s you already missed. <a href="index.html">← all sensors</a>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="legend">
+      <span><span class="chip" style="background:var(--accent)"></span>cache (pre-roll)</span>
+      <span><span class="chip" style="background:var(--hot)"></span>live (after trigger)</span>
+    </div>
+    <canvas id="playView" class="cv pixel" width="480" height="360"></canvas>
+    <div class="row">
+      <button class="btn" id="playBtn" disabled>PLAY</button>
+      <input type="range" id="scrub" min="0" max="0" value="0" disabled />
+    </div>
+    <div class="tiny" id="frameLine">Persisted frames appear here after STOP — scrub through the recovered past.</div>
+  </section>
+</div>
+
+<script type="module">
+import { RetroCaptureEngine, MemorySink, State } from './retrocache.js';
+import { makeTimestamper, wireStatus } from './demo-ui.js';
+
+const FPS = 24, PREROLL_S = 4, TW = 96, TH = 72, SLOT = TW * TH * 3;
+
+const cam = document.getElementById('cam');
+const live = document.getElementById('liveView'); const lctx = live.getContext('2d');
+const play = document.getElementById('playView'); const pctx = play.getContext('2d');
+const armBtn = document.getElementById('armBtn');
+const trigBtn = document.getElementById('trigBtn');
+const stopBtn = document.getElementById('stopBtn');
+const playBtn = document.getElementById('playBtn');
+const scrub = document.getElementById('scrub');
+const msgLine = document.getElementById('msgLine');
+const frameLine = document.getElementById('frameLine');
+
+const sink = new MemorySink();
+const engine = new RetroCaptureEngine({
+  frameRate: FPS, prerollSeconds: PREROLL_S, slotBytes: SLOT, sink,
+  onWarn: (code, d) => console.warn('[retrocache]', code, d),
+});
+wireStatus(() => engine, document.getElementById('stateBadge'), document.getElementById('statsLine'));
+
+const now = makeTimestamper();
+const thumb = document.createElement('canvas');
+thumb.width = TW; thumb.height = TH;
+const tctx = thumb.getContext('2d', { willReadFrequently: true });
+const payload = new Uint8Array(SLOT);
+
+let stream = null;
+let lastCapture = 0;
+
+function loop(t) {
+  if (cam.videoWidth) {
+    lctx.drawImage(cam, 0, 0, live.width, live.height);
+    if (engine.state === State.ACTIVE_RECORDING) {
+      lctx.fillStyle = '#fb6597';
+      lctx.beginPath(); lctx.arc(live.width - 20, 20, 7, 0, Math.PI * 2); lctx.fill();
+    }
+    if (engine.state !== State.IDLE && t - lastCapture >= 1000 / FPS - 1) {
+      lastCapture = t;
+      tctx.drawImage(cam, 0, 0, TW, TH);
+      const rgba = tctx.getImageData(0, 0, TW, TH).data;
+      for (let i = 0, j = 0; j < SLOT; i += 4) {
+        payload[j++] = rgba[i]; payload[j++] = rgba[i + 1]; payload[j++] = rgba[i + 2];
+      }
+      engine.ingest(now(), payload);
+    }
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+const playImg = pctx.createImageData(TW, TH);
+const playBuf = document.createElement('canvas');
+playBuf.width = TW; playBuf.height = TH;
+const pbctx = playBuf.getContext('2d');
+
+function showFrame(i) {
+  const f = sink.frames[i];
+  if (!f) return;
+  for (let p = 0, j = 0; j < SLOT; p += 4) {
+    playImg.data[p] = f.bytes[j++]; playImg.data[p + 1] = f.bytes[j++];
+    playImg.data[p + 2] = f.bytes[j++]; playImg.data[p + 3] = 255;
+  }
+  pbctx.putImageData(playImg, 0, 0);
+  pctx.imageSmoothingEnabled = false;
+  pctx.drawImage(playBuf, 0, 0, play.width, play.height);
+  pctx.strokeStyle = f.meta.origin === 'cache' ? '#65fbd2' : '#fb6597';
+  pctx.lineWidth = 4;
+  pctx.strokeRect(2, 2, play.width - 4, play.height - 4);
+  const dt = (f.meta.timestampUs - f.meta.triggerTimestampUs) / 1e6;
+  frameLine.textContent =
+    `frame ${i + 1}/${sink.frames.length} · id ${f.meta.frameId} · origin ${f.meta.origin} · ` +
+    `T${dt >= 0 ? '+' : ''}${dt.toFixed(2)}s` + (f.meta.gapBefore ? ` · ${f.meta.gapBefore} dropped before` : '');
+}
+
+let playTimer = null;
+playBtn.onclick = () => {
+  if (playTimer) { clearInterval(playTimer); playTimer = null; playBtn.textContent = 'PLAY'; return; }
+  playBtn.textContent = 'PAUSE';
+  playTimer = setInterval(() => {
+    let i = (Number(scrub.value) + 1) % sink.frames.length;
+    scrub.value = i;
+    showFrame(i);
+  }, 1000 / FPS);
+};
+scrub.oninput = () => showFrame(Number(scrub.value));
+
+armBtn.onclick = async () => {
+  armBtn.disabled = true;
+  try {
+    if (!stream) {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 640 } }, audio: false,
+      });
+      cam.srcObject = stream;
+      await cam.play();
+    }
+    sink.frames.length = 0;
+    if (playTimer) { clearInterval(playTimer); playTimer = null; playBtn.textContent = 'PLAY'; }
+    engine.arm();
+    trigBtn.disabled = false; stopBtn.disabled = true;
+    playBtn.disabled = true; scrub.disabled = true;
+  } catch (e) {
+    msgLine.innerHTML = `<span class="err">camera unavailable: ${e.message}</span>`;
+    armBtn.disabled = false;
+  }
+};
+trigBtn.onclick = () => { engine.trigger(); trigBtn.disabled = true; stopBtn.disabled = false; };
+stopBtn.onclick = async () => {
+  stopBtn.disabled = true;
+  await engine.stop();
+  armBtn.disabled = false;
+  if (sink.frames.length) {
+    scrub.max = sink.frames.length - 1; scrub.value = 0;
+    scrub.disabled = false; playBtn.disabled = false;
+    showFrame(0);
+  }
+};
+</script>
+</body>
+</html>
