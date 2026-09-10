@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#050503">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Ambient Present</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23050503'/%3E%3Ccircle cx='32' cy='32' r='10' fill='%23F5C400'/%3E%3Cg fill='%23F5C400' opacity='.55'%3E%3Ccircle cx='32' cy='9' r='2'/%3E%3Ccircle cx='48.3' cy='15.7' r='2'/%3E%3Ccircle cx='55' cy='32' r='2'/%3E%3Ccircle cx='48.3' cy='48.3' r='2'/%3E%3Ccircle cx='32' cy='55' r='2'/%3E%3Ccircle cx='15.7' cy='48.3' r='2'/%3E%3Ccircle cx='9' cy='32' r='2'/%3E%3Ccircle cx='15.7' cy='15.7' r='2'/%3E%3C/g%3E%3Cg fill='%23C0501C' opacity='.55'%3E%3Ccircle cx='32' cy='3.5' r='1.4'/%3E%3Ccircle cx='60.5' cy='32' r='1.4'/%3E%3Ccircle cx='32' cy='60.5' r='1.4'/%3E%3Ccircle cx='3.5' cy='32' r='1.4'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:#050503;overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none}
+body{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+canvas{display:block;width:100%;height:100%}
+#gate{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:28px;opacity:0;pointer-events:none;transition:opacity .5s ease;background:rgba(5,5,3,.18);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
+#gate.on{opacity:1;pointer-events:auto}
+#gate .veil{width:min(86vw,380px);min-height:280px;border:1px solid rgba(245,196,0,.18);border-radius:50%;display:flex;align-items:center;justify-content:center;padding:54px;text-align:center;color:#f4ebcf;box-shadow:inset 0 0 60px rgba(245,196,0,.045)}
+#gate p{font-size:12px;line-height:1.75;letter-spacing:.035em;opacity:.82;text-wrap:balance}
+#gate strong{display:block;margin-top:18px;color:#f5c400;font-size:10px;font-weight:500;letter-spacing:.2em;text-transform:uppercase}
+#gate small{display:block;margin-top:12px;font-size:9px;line-height:1.55;opacity:.48;letter-spacing:.02em}
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="Ambient temporal field"></canvas>
+<div id="gate"><div class="veil"><div id="gateCopy"></div></div></div>
+<script>
+(()=>{
+'use strict';
+const RETENTION_MS=15000;
+const MAX_SAMPLES=2200;
+const MAX_WORDS=180;
+const PALETTE={bg:'#050503',yellow:[245,196,0],orange:[192,80,28],warm:[244,235,207],red:[214,40,20]};
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d',{alpha:false});
+const gate=document.getElementById('gate'),gateCopy=document.getElementById('gateCopy');
+let W=1,H=1,DPR=1,CX=0,CY=0,R=100,last=performance.now(),raf=0;
+
+function secureEnough(){return window.isSecureContext||location.hostname==='localhost'||location.hostname==='127.0.0.1'||location.protocol==='file:'}
+function showGate(kind='intro'){
+  const media=!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia);
+  let p='',strong='',small='';
+  if(kind==='intro'){
+    p='Sound remains briefly in memory and is continuously overwritten. It is not saved unless you choose to preserve the result.';
+    strong=media&&secureEnough()?'Tap the light':'Touch the light';
+    small=media&&secureEnough()?'A long press enters without the microphone.':'This browser cannot offer microphone access here; a long press runs the instrument without it.';
+  } else if(kind==='denied'){
+    p='The browser did not grant microphone access.';strong='Tap to try again';small='Or long press to continue without the microphone.';
+  } else {
+    p='Microphone access requires a secure page and browser support.';strong='Long press to continue';small='Serve this file over HTTPS or localhost for live listening.';
+  }
+  gateCopy.innerHTML=`<p>${p}</p><strong>${strong}</strong><small>${small}</small>`;gate.classList.add('on');
+}
+function hideGate(){gate.classList.remove('on')}
+
+const Sensor={ac:null,stream:null,node:null,source:null,muter:null,ring:null,head:0,filled:0,rate:48000,activity:0,mic:false,synthetic:false,workletURL:null,words:[],recognizer:null};
+const Sem={state:'GATE',since:performance.now(),selected:null,resolved:'',language:null,topics:[],currentNote:null,browseIndex:-1,redacted:null};
+const Field={samples:[],textDots:[],separation:0,coherence:0,stability:0,decoherence:0,core:.18,symmetry:1,orbitPhase:0,archivePulse:0,outward:0};
+
+function setState(s){Sem.state=s;Sem.since=performance.now();Sound.state(s);Haptic.state(s)}
+
+async function initAudio(){
+  if(!Sensor.ac){
+    const AC=window.AudioContext||window.webkitAudioContext;if(!AC)throw new Error('No AudioContext');
+    Sensor.ac=new AC({latencyHint:'interactive'});Sensor.rate=Sensor.ac.sampleRate;Sound.init();
+  }
+  if(Sensor.ac.state!=='running')await Sensor.ac.resume();
+}
+
+async function buildWorklet(){
+  if(!Sensor.ac?.audioWorklet)return false;
+  if(!Sensor.workletURL){
+    const source=`class RingTap extends AudioWorkletProcessor{process(inputs){const d=inputs[0]&&inputs[0][0];if(d&&d.length){const c=new Float32Array(d.length);c.set(d);this.port.postMessage(c,[c.buffer])}return true}}registerProcessor('ring-tap',RingTap);`;
+    Sensor.workletURL=URL.createObjectURL(new Blob([source],{type:'text/javascript'}));
+    await Sensor.ac.audioWorklet.addModule(Sensor.workletURL);
+  }
+  return true;
+}
+
+function allocateRing(){Sensor.ring=new Float32Array(Math.ceil(Sensor.rate*RETENTION_MS/1000));Sensor.head=0;Sensor.filled=0}
+function ingest(chunk){
+  if(!Sensor.ring)return;let sum=0;
+  for(let i=0;i<chunk.length;i++){const v=chunk[i];Sensor.ring[Sensor.head]=v;Sensor.head=(Sensor.head+1)%Sensor.ring.length;sum+=v*v}
+  Sensor.filled=Math.min(Sensor.ring.length,Sensor.filled+chunk.length);
+  const rms=Math.sqrt(sum/Math.max(1,chunk.length));Sensor.activity=Math.max(Sensor.activity*.82,Math.min(1,rms*11));
+}
+
+async function startMic(){
+  if(!secureEnough()||!navigator.mediaDevices?.getUserMedia)return false;
+  try{
+    await initAudio();
+    const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:false,autoGainControl:false}});
+    Sensor.stream=stream;Sensor.source=Sensor.ac.createMediaStreamSource(stream);allocateRing();
+    const useWorklet=await buildWorklet().catch(()=>false);
+    if(useWorklet){
+      Sensor.node=new AudioWorkletNode(Sensor.ac,'ring-tap',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1]});
+      Sensor.node.port.onmessage=e=>ingest(new Float32Array(e.data));Sensor.source.connect(Sensor.node);
+    } else {
+      const n=Sensor.ac.createScriptProcessor(2048,1,1);n.onaudioprocess=e=>ingest(e.inputBuffer.getChannelData(0));Sensor.node=n;Sensor.source.connect(n);
+    }
+    Sensor.muter=Sensor.ac.createGain();Sensor.muter.gain.value=0;Sensor.node.connect(Sensor.muter);Sensor.muter.connect(Sensor.ac.destination);
+    Sensor.mic=true;Sensor.synthetic=false;startSpeechFallback();return true;
+  }catch(e){console.warn(e);stopMic();return false}
+}
+
+function stopMic(){
+  Sensor.mic=false;stopSpeechFallback();
+  try{Sensor.source?.disconnect()}catch{}try{Sensor.node?.disconnect()}catch{}try{Sensor.muter?.disconnect()}catch{}
+  Sensor.stream?.getTracks().forEach(t=>t.stop());Sensor.stream=null;Sensor.source=null;Sensor.node=null;Sensor.muter=null;Sensor.ring=null;Sensor.filled=0;Sensor.activity=0;
+}
+function windowAudio(){if(!Sensor.ring||!Sensor.filled)return null;const out=new Float32Array(Sensor.filled),start=(Sensor.head-Sensor.filled+Sensor.ring.length)%Sensor.ring.length;for(let i=0;i<Sensor.filled;i++)out[i]=Sensor.ring[(start+i)%Sensor.ring.length];return out}
+
+function startSpeechFallback(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return;
+  try{
+    const r=new SR();Sensor.recognizer=r;r.continuous=true;r.interimResults=false;r.maxAlternatives=1;
+    r.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal){const text=e.results[i][0].transcript.trim();if(text){Sensor.words.push({t:Date.now(),text});if(Sensor.words.length>MAX_WORDS)Sensor.words.splice(0,Sensor.words.length-MAX_WORDS)}}};
+    r.onend=()=>{if(Sensor.mic&&Sensor.recognizer===r){try{r.start()}catch{}}};r.onerror=()=>{};r.start();
+  }catch{}
+}
+function stopSpeechFallback(){const r=Sensor.recognizer;Sensor.recognizer=null;if(r)try{r.stop()}catch{}}
+function recentWords(){const t=Date.now()-RETENTION_MS;return Sensor.words.filter(w=>w.t>=t).map(w=>w.text).join(' ').trim()}
+
+const Models={clear:null,tongue:null,gist:null,redact:null,tried:false,loading:false};
+async function tryModels(){
+  if(Models.tried||Models.loading)return;Models.loading=true;Models.tried=true;
+  const imports=[
+    ['clear','https://cdn.jsdelivr.net/npm/@desert-ant-labs/clear/+esm','Clear'],
+    ['tongue','https://cdn.jsdelivr.net/npm/@desert-ant-labs/tongue/+esm','Tongue'],
+    ['gist','https://cdn.jsdelivr.net/npm/@desert-ant-labs/gist/+esm','Gist'],
+    ['redact','https://cdn.jsdelivr.net/npm/@desert-ant-labs/redact/+esm','Redact']
+  ];
+  for(const [key,url,name] of imports){
+    try{const m=await import(url);const C=m[name];if(!C?.load)continue;
+      if(key==='tongue'){
+        try{Models[key]=await C.load()}catch{Models[key]=null}
+      }else Models[key]=await C.load();
+    }catch(e){console.info('Optional on-device model unavailable:',key,e?.message||e)}
+  }
+  Models.loading=false;
+}
+async function enhanceAudio(samples){
+  if(!samples||!Models.clear)return samples;
+  try{const r=await Models.clear.enhance(samples,Sensor.rate);return r?.samples||r?.audio||r||samples}catch{return samples}
+}
+function detectLanguage(text){if(!text||!Models.tongue)return null;try{return Models.tongue.detect(text)?.language||null}catch{return null}}
+async function classify(text){if(!text||!Models.gist)return[];try{return await Models.gist.classify(text)||[]}catch{return[]}}
+async function redact(text){if(!text||!Models.redact)return text;try{const r=await Models.redact.redaction(text);return r?.redactedText||text}catch{return text}}
+
+const DB={db:null};
+function openDB(){return new Promise((resolve,reject)=>{if(DB.db)return resolve(DB.db);const q=indexedDB.open('ambient-present',1);q.onupgradeneeded=()=>{const d=q.result;if(!d.objectStoreNames.contains('notes'))d.createObjectStore('notes',{keyPath:'id'})};q.onsuccess=()=>{DB.db=q.result;resolve(DB.db)};q.onerror=()=>reject(q.error)})}
+async function saveNote(note){try{const d=await openDB();await new Promise((res,rej)=>{const t=d.transaction('notes','readwrite');t.objectStore('notes').put(note);t.oncomplete=res;t.onerror=()=>rej(t.error)})}catch(e){console.warn(e)}}
+async function allNotes(){try{const d=await openDB();return await new Promise((res,rej)=>{const q=d.transaction('notes').objectStore('notes').getAll();q.onsuccess=()=>res((q.result||[]).sort((a,b)=>a.createdAt-b.createdAt));q.onerror=()=>rej(q.error)})}catch{return[]}}
+async function deleteNote(id){try{const d=await openDB();await new Promise((res,rej)=>{const t=d.transaction('notes','readwrite');t.objectStore('notes').delete(id);t.oncomplete=res;t.onerror=()=>rej(t.error)})}catch{}}
+
+const Haptic={pulse(p){try{navigator.vibrate?.(p)}catch{}},state(s){if(s==='RECALL')this.pulse(70);else if(s==='WORKING')this.pulse([9,100,7,160,11]);else if(s==='READING')this.pulse([7,35,7]);else if(s==='SAVE')this.pulse(35);else if(s==='DELETE')this.pulse([6,28,5,42,4]);else if(s==='FAULT')this.pulse([35,100,18]);else if(s==='STOPPED')this.pulse(0)}};
+
+const Sound={ready:false,master:null,voices:[],noiseGain:null,
+  init(){if(this.ready||!Sensor.ac)return;const ac=Sensor.ac;this.ready=true;this.master=ac.createGain();this.master.gain.value=0;
+    const lp=ac.createBiquadFilter();lp.type='lowpass';lp.frequency.value=1000;this.master.connect(lp);lp.connect(ac.destination);
+    [[73.42,.038,.031],[110,.022,.043],[146.83,.015,.057]].forEach(([hz,amp,lfoHz])=>{const o=ac.createOscillator(),g=ac.createGain(),l=ac.createOscillator(),lg=ac.createGain();o.type='sine';o.frequency.value=hz;g.gain.value=amp;l.type='sine';l.frequency.value=lfoHz;lg.gain.value=1.3;l.connect(lg);lg.connect(o.detune);o.connect(g);g.connect(this.master);o.start();l.start();this.voices.push({o,g,l,lg,hz,amp})});
+    const b=ac.createBuffer(1,ac.sampleRate,ac.sampleRate),d=b.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*.25;const n=ac.createBufferSource();n.buffer=b;n.loop=true;const bp=ac.createBiquadFilter();bp.type='bandpass';bp.frequency.value=430;bp.Q.value=.45;this.noiseGain=ac.createGain();this.noiseGain.gain.value=0;n.connect(bp);bp.connect(this.noiseGain);this.noiseGain.connect(this.master);n.start();
+  },
+  level(v){if(!this.ready)return;this.master.gain.setTargetAtTime(v,Sensor.ac.currentTime,.65)},
+  state(s){if(!this.ready)return;const t=Sensor.ac.currentTime;
+    if(s==='RECALL'){this.voices[1].o.detune.setTargetAtTime(-16,t,.25);setTimeout(()=>this.voices[1]?.o.detune.setTargetAtTime(0,Sensor.ac.currentTime,1.6),800)}
+    if(s==='WORKING'){this.noiseGain.gain.setTargetAtTime(.025,t,.15);setTimeout(()=>this.noiseGain?.gain.setTargetAtTime(0,Sensor.ac.currentTime,1.3),1000)}
+    if(s==='READING')this.voices.forEach(v=>v.lg.gain.setTargetAtTime(.15,t,1));
+    if(s==='SAVE')this.voices.forEach(v=>v.lg.gain.setTargetAtTime(0,t,.5));
+    if(s==='DELETE'||s==='EXPIRE'){this.noiseGain.gain.setTargetAtTime(.035,t,.3);setTimeout(()=>this.noiseGain?.gain.setTargetAtTime(0,Sensor.ac.currentTime,1.5),1200)}
+    if(s==='FAULT'){this.voices[2].o.detune.setTargetAtTime(38,t,.15);setTimeout(()=>this.voices[2]?.o.detune.setTargetAtTime(0,Sensor.ac.currentTime,1.2),1400)}
+    if(s==='STOPPED')this.level(0);
+  }
+};
+
+function deposit(activity,dt){const n=Math.floor(activity*activity*dt*.06);for(let i=0;i<n;i++)Field.samples.push({lat:(Math.random()*2-1)*(.2+.75*activity)*Math.random(),age:0,born:performance.now(),act:activity,jit:Math.random()*Math.PI*2,persist:false});if(Field.samples.length>MAX_SAMPLES)Field.samples.splice(0,Field.samples.length-MAX_SAMPLES)}
+function ageSamples(now){for(let i=Field.samples.length-1;i>=0;i--){const p=Field.samples[i];if(p.persist)continue;p.age=(now-p.born)/RETENTION_MS;if(p.age>=1)Field.samples.splice(i,1)}}
+function project(lat,age,sep,jit,now){const phi=age*Math.PI*1.35-.15,theta=lat*Math.PI/2;let x=Math.sin(phi)*Math.cos(theta),z=Math.cos(phi)*Math.cos(theta),y=Math.sin(theta);x+=Math.sin(jit+now/1500)*.012*(1-Field.coherence)*(1-Field.stability);const tilt=.34,y2=y*Math.cos(tilt)-z*Math.sin(tilt),z2=y*Math.sin(tilt)+z*Math.cos(tilt),depth=(z2+1)/2;let sx=CX+x*R,sy=CY-y2*R;if(sep>0)sx+=(depth>.5?-sep:sep)*R*.46;return{sx,sy,depth}}
+function rasterizeText(text){if(!text)return[];const o=document.createElement('canvas'),oc=o.getContext('2d');const w=Math.max(80,Math.floor(R*1.65)),h=Math.max(70,Math.floor(R*1.35));o.width=w;o.height=h;const fs=Math.max(10,Math.floor(R*.115));oc.font=`700 ${fs}px ui-monospace,monospace`;oc.fillStyle='#fff';oc.textBaseline='top';const words=text.split(/\s+/),lines=[];let line='';for(const word of words){const next=line?line+' '+word:word;if(oc.measureText(next).width>w-10&&line){lines.push(line);line=word}else line=next}if(line)lines.push(line);const lh=fs*1.2,total=lines.length*lh;lines.forEach((l,i)=>oc.fillText(l,(w-oc.measureText(l).width)/2,(h-total)/2+i*lh));const d=oc.getImageData(0,0,w,h).data,step=Math.max(2,Math.round(fs/5.5)),dots=[];for(let y=0;y<h;y+=step)for(let x=0;x<w;x+=step)if(d[(y*w+x)*4+3]>96)dots.push({x:CX-w/2+x,y:CY-h/2+y,ox:(Math.random()-.5)*R*.48,oy:(Math.random()-.5)*R*.48,vx:0,vy:0,phase:Math.random()*Math.PI*2});return dots}
+
+async function recall(){
+  Sem.selected={at:Date.now(),audio:windowAudio(),fallbackText:recentWords()};Field.separation=0;Field.coherence=0;Field.stability=0;setState('RECALL');
+  tryModels();
+}
+async function resolveSelected(){
+  const selected=Sem.selected;if(!selected)return setState('FAULT');
+  selected.enhanced=await enhanceAudio(selected.audio);
+  const text=(selected.fallbackText||'').trim();
+  if(!text){setState('FAULT');return}
+  Sem.resolved=text;Sem.language=detectLanguage(text);Sem.topics=await classify(text);Field.textDots=rasterizeText(text);setState('READING');
+}
+async function persistCurrent(){
+  if(!Sem.resolved)return;
+  const topics=(Sem.topics||[]).slice(0,4).map(t=>({slug:t.slug||t.name||'',score:+(t.score||0)}));
+  const note={id:(crypto.randomUUID?.()||`${Date.now()}-${Math.random()}`),createdAt:Date.now(),transcript:Sem.resolved,language:Sem.language||null,topics,audio:null};
+  await saveNote(note);Sem.currentNote=note;setState('SAVE');
+}
+async function shareCurrent(){
+  const text=Sem.currentNote?.transcript||Sem.resolved;if(!text)return;
+  setState('SHARE');Sem.redacted=await redact(text);const outbound=Sem.redacted||text;Field.outward=1;
+  try{if(navigator.share)await navigator.share({text:outbound});else if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(outbound)}catch{}
+  setTimeout(()=>{Field.outward=0;setState(Sensor.mic||Sensor.synthetic?'LISTENING':'REST')},900);
+}
+async function browse(dir){
+  const notes=await allNotes();if(!notes.length)return;Sem.browseIndex=Sem.browseIndex<0?(dir>0?0:notes.length-1):(Sem.browseIndex+dir+notes.length)%notes.length;Sem.currentNote=notes[Sem.browseIndex];Sem.resolved=Sem.currentNote.transcript;Field.textDots=rasterizeText(Sem.resolved);Field.archivePulse=1;setState('READING');
+}
+async function deleteCurrent(){
+  if(Sem.currentNote?.id)await deleteNote(Sem.currentNote.id);Sem.currentNote=null;setState('DELETE');
+}
+
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;canvas.width=Math.floor(W*DPR);canvas.height=Math.floor(H*DPR);canvas.style.width=W+'px';canvas.style.height=H+'px';ctx.setTransform(DPR,0,0,DPR,0,0);R=Math.max(38,Math.min(W,H)*.29);CX=W/2;CY=H*.47}
+addEventListener('resize',resize,{passive:true});resize();
+function rgba(rgb,a){return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${a})`}
+
+function tick(now){
+  const dt=Math.min(50,now-last);last=now;const st=Sem.state,el=now-Sem.since;
+  if(Sensor.synthetic){const q=now/1100;Sensor.activity=Math.max(0,(Math.sin(q*2.1)+Math.sin(q*3.73)*.5)*.34+.22);if(Math.random()<dt/5000){const s=['the meeting moved to thursday','left at the second light','call me back before six','it starts at nine not ten','that was the whole point'];Sensor.words.push({t:Date.now(),text:s[Math.floor(Math.random()*s.length)]})}}
+  else Sensor.activity*=.93;
+  if(st==='LISTENING')deposit(Sensor.activity,dt);
+  if(!['RECALL','WORKING','READING','SAVE','DELETE','SHARE'].includes(st))ageSamples(now);
+  const targetCore=st==='LISTENING'?(.18+.55*Sensor.activity):st==='STOPPED'?.035:st==='GATE'?.14:.22;Field.core+=(targetCore-Field.core)*.045;
+  Sound.level(st==='STOPPED'||st==='GATE'?0:(.012+.035*Field.core+.018*(st==='LISTENING'?Sensor.activity:0)));
+  if(st==='RECALL'){Field.separation=Math.min(1,el/650);if(el>700)setState('WORKING')}
+  if(st==='WORKING'){Field.coherence=Math.min(1,el/1400);if(el>1450&&Sem.state==='WORKING')resolveSelected()}
+  if(st==='READING'){Field.archivePulse*=.94;if(el>30000&&!Sem.currentNote)setState('EXPIRE')}
+  if(st==='SAVE'){Field.stability=Math.min(1,el/700);if(el>1800){Field.textDots=[];Field.stability=0;Field.coherence=0;Field.separation=0;for(let i=0;i<54;i++)Field.samples.push({lat:(Math.random()-.5)*.09,age:.2+Math.random()*.55,born:now,act:1,jit:0,persist:true});setState(Sensor.mic||Sensor.synthetic?'LISTENING':'REST')}}
+  if(st==='DELETE'||st==='EXPIRE'){Field.decoherence=Math.min(1,el/1500);for(const p of Field.textDots){p.vx+=(p.x-CX)*.0005+(Math.random()-.5)*.45;p.vy+=(p.y-CY)*.0005+(Math.random()-.5)*.45;p.x+=p.vx;p.y+=p.vy}if(el>1550){Field.textDots=[];Field.decoherence=0;Field.coherence=0;Field.separation=0;Sem.resolved='';setState(Sensor.mic||Sensor.synthetic?'LISTENING':'REST')}}
+  if(st==='FAULT'){Field.symmetry=Math.max(0,1-el/450);if(el>1800){Field.symmetry=1;Field.coherence=0;Field.separation=0;setState(Sensor.mic||Sensor.synthetic?'LISTENING':'REST')}}
+  if(st==='SHARE')Field.outward=Math.max(0,Field.outward-dt/1100);
+
+  ctx.fillStyle=PALETTE.bg;ctx.fillRect(0,0,W,H);
+  const halo=ctx.createRadialGradient(CX,CY,0,CX,CY,R*(.3+Field.core));halo.addColorStop(0,rgba(PALETTE.yellow,.14+.5*Field.core));halo.addColorStop(.28,rgba(PALETTE.yellow,.08+.16*Field.core));halo.addColorStop(1,rgba(PALETTE.yellow,0));ctx.fillStyle=halo;ctx.beginPath();ctx.arc(CX,CY,R*(.3+Field.core),0,Math.PI*2);ctx.fill();
+  if(st==='REST'||st==='GATE'||st==='STOPPED'){for(let i=0;i<56;i++){const a=i/56*Math.PI*2;ctx.fillStyle=rgba(PALETTE.warm,.16);ctx.fillRect(CX+Math.cos(a)*R*.97-.5,CY+Math.sin(a)*R*.97-.5,1,1)}}
+  for(const p of Field.samples){let lat=p.lat;if(Field.coherence&&!p.persist){const snap=Math.round(lat*8)/8;lat+=(snap-lat)*Field.coherence}const q=project(lat,p.age,Field.separation,p.jit,now);if(Field.symmetry<1&&q.sx>CX&&Math.random()>.34)continue;const fresh=1-p.age,alpha=p.persist?.86:(.07+.8*fresh*fresh)*(.4+.6*q.depth),size=(p.persist?1.7:.7+1.8*fresh*(.5+p.act*.5))*Math.max(.65,R/155);ctx.fillStyle=p.persist?rgba(PALETTE.warm,alpha):rgba(p.age>.67?PALETTE.orange:PALETTE.yellow,alpha);ctx.beginPath();ctx.arc(q.sx,q.sy,size,0,Math.PI*2);ctx.fill()}
+  if(Field.textDots.length){const a=1-Field.decoherence;for(const p of Field.textDots){const j=(1-Field.stability)*(st==='READING'?Math.sin(now/430+p.phase)*.55:0),x=p.x+p.ox*(1-Field.coherence)+j,y=p.y+p.oy*(1-Field.coherence)-j;ctx.fillStyle=rgba(PALETTE.warm,.9*a);const s=Math.max(1,R/140);ctx.fillRect(x-s/2,y-s/2,s,s)}}
+  if(Field.outward>0){for(let i=0;i<3;i++){ctx.strokeStyle=rgba(i===2?PALETTE.orange:PALETTE.yellow,Field.outward*.16/(i+1));ctx.lineWidth=1;ctx.beginPath();ctx.arc(CX,CY,R*(1.02+i*.22+(1-Field.outward)*.18),0,Math.PI*2);ctx.stroke()}}
+  if(Field.archivePulse>0){ctx.strokeStyle=rgba(PALETTE.orange,Field.archivePulse*.3);ctx.lineWidth=1;ctx.beginPath();ctx.arc(CX,CY,R*(1.05+Field.archivePulse*.12),0,Math.PI*2);ctx.stroke()}
+  raf=requestAnimationFrame(tick);
+}
+raf=requestAnimationFrame(tick);
+
+let down=null,longTimer=null,lastTap=0;
+function pointDown(x,y){down={x,y,t:performance.now(),long:false};clearTimeout(longTimer);longTimer=setTimeout(async()=>{if(!down)return;down.long=true;await initAudio().catch(()=>{});Sensor.synthetic=true;Sensor.mic=false;hideGate();setState('LISTENING')},700)}
+async function pointUp(x,y){clearTimeout(longTimer);if(!down)return;const d=down;down=null;if(d.long)return;const dx=x-d.x,dy=y-d.y,dt=performance.now()-d.t,absx=Math.abs(dx),absy=Math.abs(dy),st=Sem.state;
+  if(absx>55&&absx>absy){await browse(dx<0?1:-1);return}
+  if(absy>55&&absy>absx&&st==='READING'){if(dy<0)await persistCurrent();else await deleteCurrent();return}
+  if(dt>550)return;
+  const now=performance.now();if(now-lastTap<300){lastTap=0;await shareCurrent();return}else lastTap=now;
+  if(st==='GATE'||st==='REST'||(st==='FAULT'&&!Sensor.mic&&!Sensor.synthetic)){if(!secureEnough()){showGate('insecure');return}await initAudio().catch(()=>{});const ok=await startMic();if(ok){hideGate();setState('LISTENING')}else{showGate('denied');setState('FAULT')}}
+  else if(st==='LISTENING')await recall();
+  else if(st==='RECALL'||st==='WORKING'){Field.separation=0;Field.coherence=0;setState('LISTENING')}
+  else if(st==='READING')await persistCurrent();
+}
+canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture?.(e.pointerId);pointDown(e.clientX,e.clientY)});
+canvas.addEventListener('pointerup',e=>pointUp(e.clientX,e.clientY));
+gate.addEventListener('pointerdown',e=>pointDown(e.clientX,e.clientY));
+gate.addEventListener('pointerup',e=>pointUp(e.clientX,e.clientY));
+
+document.addEventListener('visibilitychange',()=>{if(document.hidden){if(Sensor.mic)stopMic();Sensor.synthetic=false;setState('STOPPED')}else if(Sem.state==='STOPPED'){showGate('intro');setState('GATE')}});
+window.addEventListener('pagehide',()=>{cancelAnimationFrame(raf);stopMic();if(Sensor.workletURL)URL.revokeObjectURL(Sensor.workletURL)});
+showGate('intro');openDB().catch(()=>{});
+})();
+</script>
+</body>
+</html>

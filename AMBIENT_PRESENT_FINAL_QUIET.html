@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#050503">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>AMBIENT PRESENT</title>
+
+<!-- Embedded favicon: no external asset required. -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23050503'/%3E%3Ccircle cx='32' cy='32' r='9' fill='%23F5C400'/%3E%3Cg fill='%23F4EBCF' opacity='.38'%3E%3Ccircle cx='32' cy='9' r='1.6'/%3E%3Ccircle cx='48.3' cy='15.7' r='1.6'/%3E%3Ccircle cx='55' cy='32' r='1.6'/%3E%3Ccircle cx='48.3' cy='48.3' r='1.6'/%3E%3Ccircle cx='32' cy='55' r='1.6'/%3E%3Ccircle cx='15.7' cy='48.3' r='1.6'/%3E%3Ccircle cx='9' cy='32' r='1.6'/%3E%3Ccircle cx='15.7' cy='15.7' r='1.6'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%23050503'/%3E%3Ccircle cx='90' cy='90' r='28' fill='%23F5C400'/%3E%3Cg fill='%23F4EBCF' opacity='.35'%3E%3Ccircle cx='90' cy='24' r='4'/%3E%3Ccircle cx='156' cy='90' r='4'/%3E%3Ccircle cx='90' cy='156' r='4'/%3E%3Ccircle cx='24' cy='90' r='4'/%3E%3C/g%3E%3C/svg%3E">
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;background:#050503;overflow:hidden;overscroll-behavior:none}
+body{touch-action:none;-webkit-user-select:none;user-select:none;font-family:"Courier New",ui-monospace,Menlo,monospace}
+canvas{display:block;width:100vw;height:100dvh;background:#050503;touch-action:none}
+
+/* Only textual surface in the product. Native browser permission UI is outside our control. */
+#gate{
+  position:fixed;inset:0;z-index:10;
+  display:flex;flex-direction:column;justify-content:flex-end;align-items:center;
+  padding:0 28px calc(env(safe-area-inset-bottom,0px) + 64px);
+  color:#F4EBCF;text-align:center;
+  opacity:0;pointer-events:none;
+  transition:opacity .65s ease;
+  background:linear-gradient(to bottom,rgba(5,5,3,0) 0%,rgba(5,5,3,.08) 55%,rgba(5,5,3,.94) 82%);
+}
+#gate.on{opacity:1;pointer-events:auto}
+#gate p{max-width:330px;font-size:12.5px;line-height:1.75;letter-spacing:.055em;opacity:.84}
+#gate b{display:block;margin-top:18px;color:#F5C400;font-size:11px;line-height:1.6;font-weight:400;letter-spacing:.23em;text-transform:uppercase}
+#gate small{display:block;max-width:330px;margin-top:13px;color:#F4EBCF;font-size:10px;line-height:1.55;letter-spacing:.055em;opacity:.46}
+#gate .orb{
+  position:absolute;left:50%;top:42%;width:92px;height:92px;transform:translate(-50%,-50%);
+  border-radius:50%;
+  background:radial-gradient(circle,rgba(245,196,0,.9) 0 17%,rgba(245,196,0,.17) 18% 37%,rgba(245,196,0,0) 67%);
+}
+#gate .orb:before{
+  content:"";position:absolute;inset:-35px;border-radius:50%;
+  border:1px dotted rgba(244,235,207,.22)
+}
+#gate .orb:after{
+  content:"";position:absolute;inset:-6px;border-radius:50%;
+  border:1px solid rgba(244,235,207,.17)
+}
+</style>
+</head>
+
+<body>
+<canvas id="c" aria-label="Ambient Present"></canvas>
+<div id="gate" role="button" tabindex="0" aria-label="Enable microphone">
+  <div class="orb" aria-hidden="true"></div>
+  <div id="gateCopy"></div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* -------------------------------------------------------------------------- */
+/* PERMISSION SURFACE                                                         */
+/* -------------------------------------------------------------------------- */
+
+const gate = document.getElementById('gate');
+const gateCopy = document.getElementById('gateCopy');
+
+function say(html){ gateCopy.innerHTML = html; gate.classList.add('on'); }
+function hush(){ gate.classList.remove('on'); }
+
+function canUseMic(){
+  return !!(window.isSecureContext &&
+            navigator.mediaDevices &&
+            navigator.mediaDevices.getUserMedia &&
+            (window.AudioContext || window.webkitAudioContext));
+}
+
+function browserHint(){
+  const u=navigator.userAgent;
+  if(/iPhone|iPad|iPod/i.test(u)) return 'If access was blocked, use the page controls in the address bar or the browser app settings to allow microphone access.';
+  if(/Android/i.test(u)) return 'If access was blocked, use the site controls in the address bar and allow microphone access.';
+  return 'If access was blocked, use the site controls beside the address bar and allow the microphone.';
+}
+
+function gateIntro(){
+  say(`<p>The last fifteen seconds exist only as a rolling trace in this session. New sound replaces old sound. Nothing is kept unless you choose to keep it.</p><b>tap the light to listen</b><small>hold the light for a microphone-free demonstration</small>`);
+}
+function gateDenied(){
+  say(`<p>The browser did not give this page the microphone.</p><b>tap to try again</b><small>${browserHint()} Hold instead for the microphone-free demonstration.</small>`);
+}
+function gateUnavailable(){
+  say(`<p>This browser cannot offer live microphone capture here.</p><b>hold the light</b><small>Live capture requires a secure HTTPS page or localhost and a browser that supports microphone access.</small>`);
+}
+
+/* -------------------------------------------------------------------------- */
+/* SENSOR STATE                                                               */
+/* -------------------------------------------------------------------------- */
+
+const WINDOW_MS = 15000;
+const S = {
+  activity:0,
+  words:[],
+  mic:false,
+  synthetic:false,
+  ring:null,
+  head:0,
+  filled:0,
+  rate:48000,
+  ac:null,
+  stream:null,
+  source:null,
+  worklet:null,
+  processor:null,
+  muted:null
+};
+
+async function ensureAudio(){
+  if(!S.ac){
+    const AC = window.AudioContext || window.webkitAudioContext;
+    S.ac = new AC({latencyHint:'interactive'});
+    S.rate = S.ac.sampleRate;
+  }
+  if(S.ac.state !== 'running') await S.ac.resume().catch(()=>{});
+  Sonic.init();
+}
+
+function resetRing(){
+  S.ring = new Float32Array(Math.ceil(S.rate * WINDOW_MS / 1000));
+  S.head = 0;
+  S.filled = 0;
+}
+
+function ingestPCM(d){
+  if(!S.ring) return;
+  let power = 0;
+  for(let i=0;i<d.length;i++){
+    const v=d[i];
+    S.ring[S.head]=v;
+    S.head=(S.head+1)%S.ring.length;
+    power += v*v;
+  }
+  S.filled=Math.min(S.ring.length,S.filled+d.length);
+  const rms=Math.sqrt(power/Math.max(1,d.length));
+  S.activity += (Math.min(1,rms*10)-S.activity)*0.28;
+}
+
+async function attachAudioWorklet(src){
+  if(!S.ac.audioWorklet) return false;
+  try{
+    const code = `
+      class AmbientTap extends AudioWorkletProcessor{
+        process(inputs){
+          const ch=inputs[0]&&inputs[0][0];
+          if(ch && ch.length) this.port.postMessage(ch.slice(0));
+          return true;
+        }
+      }
+      registerProcessor('ambient-tap',AmbientTap);
+    `;
+    const url=URL.createObjectURL(new Blob([code],{type:'text/javascript'}));
+    await S.ac.audioWorklet.addModule(url);
+    URL.revokeObjectURL(url);
+
+    S.worklet = new AudioWorkletNode(S.ac,'ambient-tap');
+    S.worklet.port.onmessage=e=>ingestPCM(e.data);
+
+    S.muted=S.ac.createGain();
+    S.muted.gain.value=0;
+    src.connect(S.worklet);
+    S.worklet.connect(S.muted);
+    S.muted.connect(S.ac.destination);
+    return true;
+  }catch(_){
+    return false;
+  }
+}
+
+function attachScriptProcessor(src){
+  if(!S.ac.createScriptProcessor) return false;
+  S.processor=S.ac.createScriptProcessor(2048,1,1);
+  S.processor.onaudioprocess=e=>ingestPCM(e.inputBuffer.getChannelData(0));
+  S.muted=S.ac.createGain();
+  S.muted.gain.value=0;
+  src.connect(S.processor);
+  S.processor.connect(S.muted);
+  S.muted.connect(S.ac.destination);
+  return true;
+}
+
+async function startMic(){
+  if(!canUseMic()) return false;
+  try{
+    await ensureAudio();
+    S.stream = await navigator.mediaDevices.getUserMedia({
+      audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}
+    });
+    resetRing();
+    S.source=S.ac.createMediaStreamSource(S.stream);
+    const modern = await attachAudioWorklet(S.source);
+    if(!modern && !attachScriptProcessor(S.source)) throw new Error('No PCM capture path');
+    Recognizer.start();
+    S.mic=true;
+    S.synthetic=false;
+    return true;
+  }catch(_){
+    stopMic();
+    return false;
+  }
+}
+
+function stopMic(){
+  S.mic=false;
+  S.synthetic=false;
+  try{S.source?.disconnect()}catch(_){}
+  try{S.worklet?.disconnect()}catch(_){}
+  try{S.processor?.disconnect()}catch(_){}
+  try{S.muted?.disconnect()}catch(_){}
+  try{S.stream?.getTracks().forEach(t=>t.stop())}catch(_){}
+  Recognizer.stop();
+  S.source=S.worklet=S.processor=S.muted=S.stream=null;
+  S.ring=null; S.filled=0; S.head=0; S.activity=0;
+}
+
+/* -------------------------------------------------------------------------- */
+/* RECOGNITION CONTRACT                                                       */
+/* -------------------------------------------------------------------------- */
+
+/*
+  Browser Speech Recognition is only the adapter used here.
+  Replace this object with local ASR / alignment later without touching the field.
+  Canonical token contract:
+  { token, start, end, confidence, heardAt }
+*/
+
+const Recognizer = {
+  r:null,
+  start(){
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR) return;
+    const r=this.r=new SR();
+    r.continuous=true;
+    r.interimResults=false;
+
+    r.onresult=e=>{
+      const heardAt=Date.now();
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        if(!e.results[i].isFinal) continue;
+        const result=e.results[i][0];
+        const raw=result.transcript.trim();
+        const parts=raw.split(/\s+/).filter(Boolean);
+        const span=Math.min(3600,Math.max(450,parts.length*380));
+        parts.forEach((token,k)=>{
+          const start=heardAt-span+(k/Math.max(1,parts.length))*span;
+          const end=heardAt-span+((k+1)/Math.max(1,parts.length))*span;
+          S.words.push({
+            token,
+            start,
+            end,
+            confidence:Number.isFinite(result.confidence)?result.confidence:.72,
+            heardAt
+          });
+        });
+        const cutoff=Date.now()-120000;
+        S.words=S.words.filter(w=>w.end>=cutoff);
+      }
+    };
+    r.onend=()=>{
+      if(S.mic && this.r===r){
+        try{r.start()}catch(_){}
+      }
+    };
+    try{r.start()}catch(_){}
+  },
+  stop(){
+    const r=this.r; this.r=null;
+    if(r) try{r.stop()}catch(_){}
+  }
+};
+
+const SYN = [
+  'did you turn off the oven',
+  'the meeting moved to thursday',
+  'no the other invoice',
+  'left at the second light',
+  'call me back before six',
+  'it starts at nine not ten',
+  'that was the whole point'
+];
+let synClock=0, nextSynthetic=1800;
+
+function syntheticTick(dt){
+  synClock+=dt;
+  const phraseGate=Math.sin(synClock/4000)>-.3?1:0;
+  S.activity=Math.max(0,Math.sin(synClock/900)*.7+Math.sin(synClock/331)*.3)*phraseGate;
+  nextSynthetic-=dt;
+  if(nextSynthetic<=0){
+    const phrase=SYN[Math.floor(Math.random()*SYN.length)];
+    const parts=phrase.split(' ');
+    const now=Date.now();
+    const span=parts.length*360;
+    parts.forEach((token,k)=>S.words.push({
+      token,
+      start:now-span+k*360,
+      end:now-span+(k+1)*360,
+      confidence:.92,
+      heardAt:now
+    }));
+    nextSynthetic=3000+Math.random()*3500;
+  }
+}
+
+
+let nextPresenceAt=0;
+
+function scheduleNextPresence(){
+  /* Irregular, slow recurrence: roughly every 2.5–5 minutes. */
+  nextPresenceAt=performance.now()+150000+Math.random()*150000;
+}
+
+function maybePresence(now){
+  if(!Sonic.ready) return;
+  if(!nextPresenceAt) scheduleNextPresence();
+  if(now<nextPresenceAt) return;
+  if(M.state==='LISTENING' && (S.mic||S.synthetic)){
+    Sonic.presence();
+    Haptic.do([7,80,5]);
+    scheduleNextPresence();
+  }else{
+    /* Try again later rather than chiming during recall, reading, or memory. */
+    nextPresenceAt=now+30000+Math.random()*45000;
+  }
+}
+
+function windowTokens(){
+  const n=Date.now(), cutoff=n-WINDOW_MS;
+  return S.words.filter(w=>w.end>=cutoff && w.start<=n);
+}
+function windowText(){ return windowTokens().map(w=>w.token).join(' '); }
+
+function windowAudio(){
+  if(!S.ring || !S.filled) return null;
+  const b=new Float32Array(S.filled);
+  const st=(S.head-S.filled+S.ring.length)%S.ring.length;
+  for(let i=0;i<S.filled;i++) b[i]=S.ring[(st+i)%S.ring.length];
+  return b;
+}
+
+function playAudio(b){
+  if(!b || !S.ac) return;
+  const ab=S.ac.createBuffer(1,b.length,S.rate);
+  ab.getChannelData(0).set(b);
+  const n=S.ac.createBufferSource();
+  n.buffer=ab;
+  n.connect(S.ac.destination);
+  n.start();
+}
+
+/* -------------------------------------------------------------------------- */
+/* SONIC + HAPTIC                                                             */
+/* -------------------------------------------------------------------------- */
+
+const Sonic = {
+  ready:false,master:null,voices:[],noise:null,
+  init(){
+    if(this.ready||!S.ac) return;
+    const ac=S.ac;
+    this.ready=true;
+    this.master=ac.createGain();
+    this.master.gain.value=0;
+
+    const lp=ac.createBiquadFilter();
+    lp.type='lowpass';
+    lp.frequency.value=1300;
+    this.master.connect(lp);
+    lp.connect(ac.destination);
+
+    const base=110;
+    [[1,.09,.071],[1.5,.05,.053],[2,.035,.037],[3,.015,.029]].forEach(([ratio,vol,lfoHz])=>{
+      const o=ac.createOscillator(),g=ac.createGain(),l=ac.createOscillator(),lg=ac.createGain();
+      o.type='sine'; o.frequency.value=base*ratio;
+      g.gain.value=vol;
+      l.type='sine'; l.frequency.value=lfoHz;
+      lg.gain.value=base*ratio*.005;
+      l.connect(lg); lg.connect(o.frequency);
+      o.connect(g); g.connect(this.master);
+      o.start(); l.start();
+      this.voices.push({o,g,l,lg,ratio,vol});
+    });
+
+    const nb=ac.createBuffer(1,ac.sampleRate*2,ac.sampleRate);
+    const nd=nb.getChannelData(0);
+    for(let i=0;i<nd.length;i++) nd[i]=(Math.random()*2-1)*.45;
+    const n=ac.createBufferSource(); n.buffer=nb; n.loop=true;
+    const ng=ac.createGain(); ng.gain.value=0;
+    const nf=ac.createBiquadFilter(); nf.type='bandpass'; nf.frequency.value=520; nf.Q.value=.7;
+    n.connect(nf); nf.connect(ng); ng.connect(this.master);
+    n.start(); this.noise=ng;
+  },
+  set(level){
+    if(!this.ready) return;
+    /* No continuous drone. Silence is the default acoustic state. */
+    this.master.gain.setTargetAtTime(level,S.ac.currentTime,.45);
+  },
+  presence(){
+    if(!this.ready) return;
+    const ac=S.ac,t=ac.currentTime;
+    const choices=[
+      [1,1.5,2],
+      [1,4/3,2],
+      [1,5/4,3/2],
+      [1,3/2,9/4]
+    ];
+    const chord=choices[Math.floor(Math.random()*choices.length)];
+    const root=[164.81,174.61,196,220][Math.floor(Math.random()*4)];
+
+    chord.forEach((ratio,i)=>{
+      const o=ac.createOscillator(),g=ac.createGain(),f=ac.createBiquadFilter();
+      o.type='sine';
+      o.frequency.value=root*ratio;
+      f.type='lowpass';
+      f.frequency.value=1100;
+      f.Q.value=.2;
+
+      const start=t+i*(.11+Math.random()*.13);
+      const peak=.018 + Math.random()*.012;
+      const end=start+1.8+Math.random()*1.6;
+
+      g.gain.setValueAtTime(.0001,start);
+      g.gain.exponentialRampToValueAtTime(peak,start+.08);
+      g.gain.exponentialRampToValueAtTime(.0001,end);
+
+      o.detune.value=(Math.random()-.5)*4;
+      o.connect(f);f.connect(g);g.connect(this.master);
+      o.start(start);o.stop(end+.05);
+    });
+  },
+  lock(on){
+    if(!this.ready) return;
+    const t=S.ac.currentTime;
+    this.voices.forEach(v=>v.lg.gain.setTargetAtTime(on?0:110*v.ratio*.005,t,.45));
+  },
+  tone(from,to,dur,vol=.06){
+    if(!this.ready) return;
+    const ac=S.ac,t=ac.currentTime,o=ac.createOscillator(),g=ac.createGain();
+    o.type='triangle';
+    o.frequency.setValueAtTime(220*from,t);
+    o.frequency.exponentialRampToValueAtTime(220*to,t+dur);
+    g.gain.setValueAtTime(.0001,t);
+    g.gain.linearRampToValueAtTime(vol,t+.05);
+    g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+    o.connect(g); g.connect(this.master); o.start(t); o.stop(t+dur+.08);
+  },
+  wash(level,dur){
+    if(!this.ready) return;
+    const t=S.ac.currentTime;
+    this.noise.gain.setTargetAtTime(level,t,.25);
+    this.noise.gain.setTargetAtTime(0,t+dur,.8);
+  },
+  detune(cents){
+    if(!this.ready) return;
+    const t=S.ac.currentTime;
+    this.voices[1].o.frequency.setTargetAtTime(165*Math.pow(2,cents/1200),t,.2);
+  },
+  fall(){
+    if(!this.ready) return;
+    const t=S.ac.currentTime;
+    this.voices.forEach((v,i)=>{
+      v.g.gain.setTargetAtTime(0,t+i*.6,.7);
+      v.g.gain.setTargetAtTime(v.vol,t+4,1.4);
+    });
+  }
+};
+
+const Haptic = {
+  do(p){ if(navigator.vibrate) try{navigator.vibrate(p)}catch(_){} },
+  recall(){this.do(90)},
+  work(){this.do([12,110,9,160,14,90])},
+  read(){this.do([8,40,8])},
+  save(){this.do(45)},
+  del(){this.do([6,30,5,45,4,70,3])},
+  fault(){this.do([40,120,20])},
+  stop(){this.do(0)}
+};
+
+/* -------------------------------------------------------------------------- */
+/* MEMORY                                                                     */
+/* -------------------------------------------------------------------------- */
+
+const STORE_KEY='ambient-present-notes-v1';
+
+function loadNotes(){
+  try{
+    const arr=JSON.parse(localStorage.getItem(STORE_KEY)||'[]');
+    return Array.isArray(arr)?arr:[];
+  }catch(_){ return []; }
+}
+function saveNotes(){
+  try{
+    localStorage.setItem(STORE_KEY,JSON.stringify(M.persistent.slice(-100)));
+  }catch(_){}
+}
+
+const M = {
+  state:'GATE',
+  since:0,
+  selected:null,
+  resolvedText:'',
+  resolvedTokens:[],
+  persistent:loadNotes(),
+  memoryIndex:-1,
+  fault:0
+};
+
+function currentMemory(){
+  if(M.memoryIndex<0 || M.memoryIndex>=M.persistent.length) return null;
+  return M.persistent[M.memoryIndex];
+}
+
+function saveCurrent(){
+  if(!M.resolvedText) return;
+  const note={
+    id:(crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random()),
+    at:Date.now(),
+    text:M.resolvedText,
+    tokens:M.resolvedTokens.map(t=>({
+      token:t.token,
+      start:t.start,
+      end:t.end,
+      confidence:t.confidence
+    })),
+    seed:Math.random()*10000
+  };
+  M.persistent.push(note);
+  M.memoryIndex=M.persistent.length-1;
+  saveNotes();
+}
+
+async function shareMemory(){
+  const note=currentMemory();
+  if(!note) return;
+  try{
+    if(navigator.share) await navigator.share({title:'Ambient Present',text:note.text});
+    else if(navigator.clipboard) await navigator.clipboard.writeText(note.text);
+  }catch(_){}
+}
+
+function deleteMemory(){
+  if(M.memoryIndex<0) return;
+  M.persistent.splice(M.memoryIndex,1);
+  if(M.persistent.length===0) M.memoryIndex=-1;
+  else M.memoryIndex=Math.min(M.memoryIndex,M.persistent.length-1);
+  saveNotes();
+}
+
+function browseMemory(dir){
+  if(!M.persistent.length) return false;
+  if(M.memoryIndex<0) M.memoryIndex=M.persistent.length-1;
+  else M.memoryIndex=(M.memoryIndex+dir+M.persistent.length)%M.persistent.length;
+  const note=currentMemory();
+  if(note){
+    M.resolvedText=note.text;
+    M.resolvedTokens=note.tokens||[];
+    F.text=rasterText(note.text,note.seed||0);
+    go('MEMORY');
+    return true;
+  }
+  return false;
+}
+
+/* -------------------------------------------------------------------------- */
+/* STATE MACHINE                                                              */
+/* -------------------------------------------------------------------------- */
+
+function go(s){
+  M.state=s;
+  M.since=performance.now();
+
+  if(s==='RECALL'){Sonic.tone(1.5,1,.45,.018);Haptic.recall()}
+  if(s==='WORKING'){Haptic.work()}
+  if(s==='READING'){Sonic.tone(1,1,.28,.012);Haptic.read()}
+  if(s==='SAVE'){Sonic.tone(1,1.5,.55,.02);Haptic.save()}
+  if(s==='DELETE'){Haptic.del()}
+  if(s==='EXPIRE'){}
+  if(s==='FAULT'){Sonic.tone(1,.97,.4,.012);Haptic.fault()}
+  if(s==='STOPPED'){Haptic.stop()}
+  if(s==='MEMORY'){}
+}
+
+/* -------------------------------------------------------------------------- */
+/* FIELD STATE                                                                */
+/* -------------------------------------------------------------------------- */
+
+const F={
+  samples:[],
+  text:[],
+  separation:0,
+  coherence:0,
+  stability:0,
+  decoherence:0,
+  core:.12,
+  symmetry:1
+};
+
+function deposit(activity,dt){
+  const n=Math.floor(activity*activity*dt*.07);
+  for(let i=0;i<n;i++){
+    F.samples.push({
+      lat:(Math.random()*2-1)*(.35+.65*activity)*Math.random(),
+      lon:0,
+      born:performance.now(),
+      act:activity,
+      jit:Math.random()*Math.PI*2,
+      persist:0
+    });
+  }
+  if(F.samples.length>2200) F.samples.splice(0,F.samples.length-2200);
+}
+
+function ageSamples(now){
+  for(let i=F.samples.length-1;i>=0;i--){
+    const p=F.samples[i];
+    if(p.persist) continue;
+    const a=(now-p.born)/WINDOW_MS;
+    if(a>=1){F.samples.splice(i,1);continue}
+    p.lon=a;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* RASTER                                                                     */
+/* -------------------------------------------------------------------------- */
+
+const c=document.getElementById('c');
+const g=c.getContext('2d',{alpha:false});
+let W,H,R,CX,CY,dpr=1;
+
+function resize(){
+  dpr=Math.min(2,devicePixelRatio||1);
+  W=innerWidth; H=innerHeight;
+  c.width=Math.round(W*dpr); c.height=Math.round(H*dpr);
+  c.style.width=W+'px'; c.style.height=H+'px';
+  g.setTransform(dpr,0,0,dpr,0,0);
+  R=Math.min(W,H)*.30;
+  CX=W/2;
+  CY=H*.44;
+}
+addEventListener('resize',resize,{passive:true});
+resize();
+
+const YEL='245,196,0', ORG='192,80,28', WHT='244,235,207', RED='214,40,20';
+
+function col(a,lon){
+  return `rgba(${Math.round(245-53*lon)},${Math.round(196-116*lon)},${Math.round(28*lon)},${a})`;
+}
+
+function project(lat,lon,sep,jit,t){
+  const phi=lon*Math.PI,theta=lat*Math.PI/2;
+  let x=Math.sin(phi)*Math.cos(theta);
+  let z=Math.cos(phi)*Math.cos(theta);
+  let y=Math.sin(theta);
+
+  x += Math.sin(jit+t/1400)*.012*(1-F.coherence)*(1-F.stability);
+
+  const tilt=.35;
+  const y2=y*Math.cos(tilt)-z*Math.sin(tilt);
+  const z2=y*Math.sin(tilt)+z*Math.cos(tilt);
+  const depth=(z2+1)/2;
+
+  let sx=CX+x*R*(1-.1*lon);
+  let sy=CY-y2*R;
+  if(sep>0) sx+=(depth>.5?-sep:sep)*R*.55;
+  return{sx,sy,depth};
+}
+
+function seeded(seed){
+  let x=(Math.floor(seed)||1)>>>0;
+  return ()=>((x=(x*1664525+1013904223)>>>0)/4294967296);
+}
+
+function rasterText(text,seed=0){
+  const o=document.createElement('canvas'),oc=o.getContext('2d');
+  const w=Math.max(120,Math.floor(R*1.75)),h=Math.max(120,Math.floor(R*1.45));
+  o.width=w;o.height=h;
+
+  const fs=Math.max(11,Math.floor(R*.13));
+  oc.font=`700 ${fs}px "Courier New",monospace`;
+  oc.fillStyle='#fff';
+  oc.textBaseline='top';
+
+  const words=text.split(/\s+/).filter(Boolean),lines=[];
+  let cur='';
+  for(const wd of words){
+    const t=cur?cur+' '+wd:wd;
+    if(oc.measureText(t).width>w-8&&cur){lines.push(cur);cur=wd}else cur=t;
+  }
+  if(cur) lines.push(cur);
+
+  const lh=fs*1.25,total=lines.length*lh;
+  lines.forEach((l,i)=>oc.fillText(l,(w-oc.measureText(l).width)/2,(h-total)/2+i*lh));
+
+  const d=oc.getImageData(0,0,w,h).data;
+  const step=Math.max(2,Math.round(fs/6));
+  const out=[],rnd=seeded(seed||Math.random()*1e9);
+
+  for(let y=0;y<h;y+=step){
+    for(let x=0;x<w;x+=step){
+      if(d[(y*w+x)*4+3]>120){
+        out.push({
+          x:CX-w/2+x,y:CY-h/2+y,
+          ox:(rnd()-.5)*R*.6,
+          oy:(rnd()-.5)*R*.6,
+          vx:0,vy:0,ph:rnd()*Math.PI*2
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/* -------------------------------------------------------------------------- */
+/* ANIMATION                                                                  */
+/* -------------------------------------------------------------------------- */
+
+let last=performance.now();
+
+function afterEvent(){
+  go(S.mic||S.synthetic?'LISTENING':'REST');
+}
+
+function render(now){
+  const dt=Math.min(50,now-last);
+  last=now;
+  const st=M.state,el=now-M.since;
+
+  if(S.synthetic) syntheticTick(dt);
+  maybePresence(now);
+  if(st==='LISTENING') deposit(S.activity,dt);
+  if(!['RECALL','WORKING','READING','MEMORY'].includes(st)) ageSamples(now);
+
+  const targetCore =
+    st==='LISTENING' ? .06+S.activity*.55 :
+    st==='REST'||st==='GATE' ? .07 :
+    st==='STOPPED' ? .02 :
+    st==='MEMORY' ? .10 : .08;
+
+  F.core += (targetCore-F.core)*.05;
+
+  /* Silence is normal. The sound layer only speaks at sparse meaningful moments. */
+
+  if(st==='RECALL'){
+    F.separation=Math.min(1,el/700);
+    if(el>700) go('WORKING');
+  }
+
+  if(st==='WORKING'){
+    F.coherence=Math.min(1,el/1500);
+    if(F.coherence>=1){
+      M.resolvedTokens=windowTokens();
+      M.resolvedText=M.resolvedTokens.map(w=>w.token).join(' ');
+      if(M.resolvedText){
+        F.text=rasterText(M.resolvedText);
+        go('READING');
+      }else{
+        M.fault=1;
+        go('FAULT');
+      }
+    }
+  }
+
+  if(st==='READING'){
+    const k=Math.min(1,el/900);
+    F.text.forEach(p=>{p.ox*=1-.12*k;p.oy*=1-.12*k});
+    if(el>22000) go('EXPIRE');
+  }
+
+  if(st==='SAVE'){
+    F.stability=Math.min(1,el/600);
+    F.separation=Math.max(0,1-el/1500);
+    if(el>2400){
+      saveCurrent();
+      F.text=[];
+      F.stability=0;F.coherence=0;
+      afterEvent();
+    }
+  }
+
+  if(st==='DELETE'){
+    F.decoherence=Math.min(1,el/1650);
+    F.separation=Math.max(0,1-el/1100);
+    F.text.forEach(p=>{
+      p.vx+=(p.x-CX)*.0006+(Math.random()-.5)*.6;
+      p.vy+=(p.y-CY)*.0006+(Math.random()-.5)*.6;
+      p.x+=p.vx;p.y+=p.vy;
+    });
+    if(el>1650){
+      F.text=[];F.decoherence=0;F.coherence=0;
+      afterEvent();
+    }
+  }
+
+  if(st==='EXPIRE'){
+    F.decoherence=Math.min(1,el/2800);
+    F.separation=Math.max(0,1-el/1900);
+    F.text.forEach(p=>{
+      p.x+=(Math.random()-.5)*.9*F.decoherence;
+      p.y+=(Math.random()-.5)*.9*F.decoherence;
+    });
+    if(el>2800){
+      F.text=[];F.decoherence=0;F.coherence=0;
+      afterEvent();
+    }
+  }
+
+  if(st==='FAULT'){
+    F.symmetry=Math.max(0,1-el/500);
+    F.separation=Math.max(0,F.separation-dt/700);
+    F.coherence=Math.max(0,F.coherence-dt/700);
+    if(el>2400){
+      F.symmetry=1;M.fault=0;
+      go(S.mic||S.synthetic?'LISTENING':'REST');
+    }
+  }
+
+  if(st==='STOPPED' && F.samples.filter(p=>!p.persist).length===0 && el>1000) go('REST');
+
+  g.fillStyle='#050503';
+  g.fillRect(0,0,W,H);
+
+  /* Light is deliberately subordinate to structure. */
+  const cr=R*(.045+F.core*.13)*(st==='STOPPED'?.5:1);
+  const gr=g.createRadialGradient(CX,CY,0,CX,CY,Math.max(1,cr*3.6));
+  gr.addColorStop(0,`rgba(${YEL},${.45*F.core+.04})`);
+  gr.addColorStop(.32,`rgba(${YEL},${.14*F.core})`);
+  gr.addColorStop(1,'rgba(245,196,0,0)');
+  g.fillStyle=gr;
+  g.beginPath();g.arc(CX,CY,cr*3.6,0,Math.PI*2);g.fill();
+
+  if(F.separation>.02){
+    const gap=g.createRadialGradient(CX,CY,0,CX,CY,R*.6);
+    gap.addColorStop(0,`rgba(${ORG},${.38*F.separation})`);
+    gap.addColorStop(1,'rgba(192,80,28,0)');
+    g.fillStyle=gap;
+    g.beginPath();g.arc(CX,CY,R*.6,0,Math.PI*2);g.fill();
+  }
+
+  /* Quiet scaffold: one-bit friendly. */
+  if(['REST','STOPPED','GATE'].includes(st)){
+    g.fillStyle=`rgba(${WHT},.22)`;
+    for(let i=0;i<48;i++){
+      const a=i/48*Math.PI*2;
+      g.fillRect(CX+Math.cos(a)*R*.98-.5,CY+Math.sin(a)*R*.95-.5,1.2,1.2);
+    }
+  }
+
+  const rows=9;
+  for(const p of F.samples){
+    let lat=p.lat;
+    if(F.coherence>0&&!p.persist){
+      const r=Math.round(lat*rows)/rows;
+      lat+=(r-lat)*F.coherence;
+    }
+
+    const q=project(lat,p.lon,F.separation,p.jit,now);
+
+    if(F.symmetry<1){
+      const ang=Math.atan2(q.sy-CY,q.sx-CX);
+      if(Math.abs(ang)<(1-F.symmetry)*.9&&Math.random()<.8) continue;
+    }
+
+    const fresh=1-p.lon;
+    const a=p.persist?.95:(.08+.85*fresh*fresh)*(.35+.65*q.depth)*(1-F.decoherence*.6);
+    const sz=(p.persist?1.9:.7+2.3*fresh*(.4+.6*p.act))*(.6+.4*q.depth)*(R/150);
+
+    g.fillStyle=p.persist
+      ?`rgba(${WHT},${a})`
+      :(F.symmetry<1&&Math.random()<.15?`rgba(${RED},${a})`:col(a,p.lon));
+
+    g.beginPath();g.arc(q.sx,q.sy,sz,0,Math.PI*2);g.fill();
+  }
+
+  if(F.text.length){
+    const settled=(st==='SAVE'||st==='MEMORY')?1:0;
+    const alpha=(st==='DELETE'||st==='EXPIRE')?1-F.decoherence:1;
+    for(const p of F.text){
+      const jx=settled?0:Math.sin(p.ph+now/300)*.5*(1-F.stability);
+      const jy=settled?0:Math.cos(p.ph+now/340)*.5*(1-F.stability);
+      g.fillStyle=`rgba(${WHT},${.92*alpha})`;
+      const s=(st==='SAVE'||st==='MEMORY'?1.55:1.25)*(R/150);
+      g.fillRect(p.x+p.ox+jx-s/2,p.y+p.oy+jy-s/2,s,s);
+    }
+  }
+
+  /* Memory index: tiny orbital marks, not a text counter. */
+  if(st==='MEMORY' && M.persistent.length){
+    const n=Math.min(24,M.persistent.length);
+    for(let i=0;i<n;i++){
+      const a=(i/n)*Math.PI*2-Math.PI/2;
+      const active=(M.memoryIndex% n)===i;
+      g.fillStyle=active?`rgba(${YEL},.95)`:`rgba(${WHT},.22)`;
+      const rr=R*1.12;
+      const s=active?2.6:1.2;
+      g.beginPath();g.arc(CX+Math.cos(a)*rr,CY+Math.sin(a)*rr,s,0,Math.PI*2);g.fill();
+    }
+  }
+
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+
+/* -------------------------------------------------------------------------- */
+/* GESTURES                                                                   */
+/* -------------------------------------------------------------------------- */
+
+let down=null, holdTimer=null, holdFired=false;
+
+async function beginSynthetic(){
+  await ensureAudio();
+  hush();
+  S.synthetic=true;
+  S.mic=false;
+  if(!S.ring) resetRing();
+  go('LISTENING');
+  Sonic.set(1);
+  Sonic.presence();
+  scheduleNextPresence();
+}
+
+async function beginMic(){
+  if(!canUseMic()){
+    gateUnavailable();
+    return;
+  }
+  const ok=await startMic();
+  if(ok){
+    hush();
+    go('LISTENING');
+    Sonic.set(1);
+    Sonic.presence();
+    scheduleNextPresence();
+    Haptic.do(20);
+  }else{
+    gateDenied();
+    go('FAULT');
+  }
+}
+
+function startGesture(x,y,target){
+  down={x,y,t:performance.now(),target};
+  holdFired=false;
+  if(['REST','GATE','FAULT'].includes(M.state)){
+    holdTimer=setTimeout(()=>{
+      holdTimer=null;
+      holdFired=true;
+      beginSynthetic();
+    },700);
+  }
+}
+
+function endGesture(x,y){
+  if(holdTimer){clearTimeout(holdTimer);holdTimer=null}
+  if(!down||holdFired){down=null;return}
+
+  const dx=x-down.x,dy=y-down.y,dur=performance.now()-down.t;
+  down=null;
+
+  const st=M.state;
+  const horizontal=Math.abs(dx)>60 && Math.abs(dx)>Math.abs(dy);
+  const vertical=Math.abs(dy)>60 && Math.abs(dy)>Math.abs(dx);
+
+  if(horizontal){
+    if(['LISTENING','REST','MEMORY'].includes(st)){
+      browseMemory(dx<0?1:-1);
+      return;
+    }
+  }
+
+  if(vertical){
+    if(st==='READING'){
+      if(dy<0) go('SAVE');
+      else go('DELETE');
+      return;
+    }
+    if(st==='MEMORY'){
+      if(dy<0) shareMemory();
+      else{
+        deleteMemory();
+        if(M.persistent.length) browseMemory(0);
+        else {F.text=[];afterEvent()}
+      }
+      return;
+    }
+  }
+
+  if(dur>650) return;
+
+  if(['GATE','REST'].includes(st) || (st==='FAULT'&&!S.mic&&!S.synthetic)){
+    beginMic();
+  }else if(st==='LISTENING'){
+    M.selected={at:Date.now(),audio:windowAudio()};
+    F.separation=0;F.coherence=0;
+    go('RECALL');
+  }else if(st==='RECALL'||st==='WORKING'){
+    F.separation=0;F.coherence=0;
+    go('LISTENING');
+  }else if(st==='READING'){
+    playAudio(M.selected&&M.selected.audio);
+  }else if(st==='MEMORY'){
+    shareMemory();
+  }
+}
+
+/* Canvas uses direct, trusted pointer events. */
+c.addEventListener('pointerdown',e=>startGesture(e.clientX,e.clientY,'canvas'));
+c.addEventListener('pointerup',e=>endGesture(e.clientX,e.clientY));
+c.addEventListener('pointercancel',()=>{if(holdTimer)clearTimeout(holdTimer);holdTimer=null;down=null});
+
+/* Gate also uses direct trusted pointer events; no synthetic PointerEvent forwarding. */
+gate.addEventListener('pointerdown',e=>startGesture(e.clientX,e.clientY,'gate'));
+gate.addEventListener('pointerup',e=>endGesture(e.clientX,e.clientY));
+gate.addEventListener('keydown',e=>{
+  if(e.key==='Enter'||e.key===' '){e.preventDefault();beginMic()}
+});
+
+/* Page suspension purges transient capture. Persisted text notes remain. */
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden && (S.mic||S.synthetic)){
+    stopMic();
+    F.text=[];F.separation=0;F.coherence=0;
+    go('STOPPED');
+  }else if(!document.hidden && ['STOPPED','REST'].includes(M.state)){
+    setTimeout(()=>gateIntro(),800);
+  }
+});
+
+addEventListener('beforeunload',()=>stopMic(),{once:true});
+
+gateIntro();
+
+})();
+</script>
+</body>
+</html>

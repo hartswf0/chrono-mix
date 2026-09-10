@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#050503">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>AMBIENT PRESENT</title>
+
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'><rect%20width='64'%20height='64'%20fill='%23050503'/><g%20fill='%23F5C400'><circle%20cx='20'%20cy='32'%20r='2'/><circle%20cx='25'%20cy='25'%20r='2'/><circle%20cx='25'%20cy='32'%20r='3'/><circle%20cx='25'%20cy='39'%20r='2'/><circle%20cx='32'%20cy='18'%20r='2'/><circle%20cx='32'%20cy='25'%20r='3'/><circle%20cx='32'%20cy='32'%20r='4'/><circle%20cx='32'%20cy='39'%20r='3'/><circle%20cx='32'%20cy='46'%20r='2'/></g><g%20fill='%23C0501C'><circle%20cx='39'%20cy='25'%20r='2'/><circle%20cx='39'%20cy='32'%20r='3'/><circle%20cx='39'%20cy='39'%20r='2'/><circle%20cx='46'%20cy='32'%20r='2'/></g></svg>">
+<link rel="icon" type="image/png" sizes="64x64" href="data:image/png;base64,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">
+<link rel="apple-touch-icon" href="data:image/png;base64,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">
+<link rel="manifest" href="data:application/manifest+json,{"name":"Ambient%20Present","short_name":"Present","display":"standalone","background_color":"%23050503","theme_color":"%23050503"}">
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{
+  width:100%;height:100%;overflow:hidden;
+  background:#050503;
+  touch-action:none;
+  overscroll-behavior:none;
+  -webkit-user-select:none;user-select:none;
+  -webkit-tap-highlight-color:transparent;
+}
+body{display:grid;place-items:center}
+#app{
+  position:relative;
+  width:100vw;height:100dvh;min-height:100svh;
+  overflow:hidden;background:#050503;
+}
+canvas{
+  position:absolute;inset:0;width:100%;height:100%;
+  display:block;
+  image-rendering:pixelated;
+  image-rendering:crisp-edges;
+}
+
+/* Permission is the only visible prose in the experience.
+   It is not a card: it occupies the same dark as the field. */
+#permission{
+  position:absolute;inset:0;z-index:20;
+  width:100%;height:100%;max-width:none;max-height:none;
+  border:0;margin:0;padding:0;
+  background:rgba(5,5,3,.992);
+  color:#F4EBCF;
+  overflow:hidden;
+}
+#permission::backdrop{background:#050503}
+#permitField{position:absolute;inset:0;pointer-events:none}
+#permitWords{
+  position:absolute;
+  left:8vw;right:8vw;
+  bottom:calc(env(safe-area-inset-bottom,0px) + 9vh);
+  font-family:"Courier New",ui-monospace,Menlo,monospace;
+  text-align:center;
+  color:#F4EBCF;
+}
+#permitWords p{
+  margin:0 auto 24px;max-width:31em;
+  font-size:12px;line-height:1.65;letter-spacing:.055em;
+  opacity:.78;
+}
+#choices{
+  display:flex;justify-content:center;gap:28px;
+}
+#choices button{
+  appearance:none;border:0;background:transparent;
+  color:#F5C400;
+  font:11px/1 "Courier New",ui-monospace,Menlo,monospace;
+  letter-spacing:.20em;
+  padding:16px 10px;
+}
+#choices button:active{opacity:.45}
+.sr-only{
+  position:absolute!important;width:1px;height:1px;
+  padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0,0,0,0);white-space:nowrap;border:0;
+}
+
+@media (min-width:720px){
+  body{background:#111}
+  #app{
+    width:390px;height:844px;min-height:0;
+    box-shadow:0 0 0 10px #151311,0 26px 80px #000;
+  }
+}
+</style>
+</head>
+
+<body>
+<div id="app">
+  <canvas id="field" aria-label="Ambient recent-time field"></canvas>
+
+  <dialog id="permission">
+    <canvas id="permitField" aria-hidden="true"></canvas>
+    <div id="permitWords">
+      <p>This room can hold the last fifteen seconds. Nothing leaves this device unless you keep it.</p>
+      <div id="choices">
+        <button id="listen" type="button">LISTEN</button>
+        <button id="watch" type="button">WATCH ONLY</button>
+      </div>
+    </div>
+  </dialog>
+
+  <div id="status" class="sr-only" role="status" aria-live="polite"></div>
+</div>
+
+<script>
+(() => {
+"use strict";
+
+/* ============================================================
+   AMBIENT PRESENT
+   One field. No visible controls after permission.
+
+   LIVE
+     tap                recent past comes forward
+     horizontal swipe   browse kept moments
+
+   RECALLED
+     long press          keep this moment
+     tap                 return to live
+     swipe down          let this recalled moment go
+
+   ARCHIVE
+     horizontal swipe    older / newer kept moment
+     swipe up            share / send
+     double tap          copy transcript when one exists
+     swipe down          delete kept moment
+     tap                 return to live
+
+   Every visible mark corresponds to temporal or stored state.
+   No timer rings, progress meters, transport icons, badges,
+   cards, tabs, status labels, or app chrome.
+============================================================ */
+
+const WINDOW_MS = 15000;
+const GRID = Math.max(8, Math.min(128, Number(new URLSearchParams(location.search).get("grid")) || 64));
+const SAMPLE_MS = GRID <= 16 ? 420 : GRID <= 32 ? 250 : 170;
+const LONG_MS = 650;
+const SWIPE = GRID * .12;
+
+const field = document.getElementById("field");
+const g = field.getContext("2d",{alpha:false});
+const permit = document.getElementById("permission");
+const permitField = document.getElementById("permitField");
+const pg = permitField.getContext("2d",{alpha:false});
+const status = document.getElementById("status");
+
+const C = {
+  bg:[5,5,3],
+  dim:[63,48,28],
+  amber:[224,146,49],
+  gold:[245,196,0],
+  cream:[244,235,207],
+  red:[192,80,28]
+};
+
+const rgb=(c,a=1)=>`rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const mix=(a,b,t)=>[
+  a[0]+(b[0]-a[0])*t,
+  a[1]+(b[1]-a[1])*t,
+  a[2]+(b[2]-a[2])*t
+];
+
+const S = {
+  mode:"permission",       // permission | live | recall | archive | share | copy | delete | fault | synthetic
+  stream:null, ac:null, analyser:null, data:null,
+  ring:null, head:0, filled:0, sampleRate:48000, processor:null,
+  activity:0, smooth:0,
+  marks:[],
+  selected:null,
+  words:[],
+  recognizer:null,
+  recognizerWanted:false,
+  lastSample:0,
+  phase:0,
+  pointer:null,
+  tapAt:0,
+  archive:[],
+  archiveIndex:0,
+  wake:null,
+  synthetic:false,
+  transitionAt:performance.now(),
+  transient:null
+};
+
+function announce(s){ status.textContent=s }
+
+/* ---------------------- raster ---------------------- */
+function sizeCanvas(c,ctx){
+  const dpr=Math.min(devicePixelRatio||1,2);
+  c.width=GRID*dpr;c.height=GRID*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.imageSmoothingEnabled=false;
+}
+function resize(){sizeCanvas(field,g);sizeCanvas(permitField,pg)}
+resize();addEventListener("resize",resize);
+
+function clear(ctx){ctx.fillStyle=rgb(C.bg);ctx.fillRect(0,0,GRID,GRID)}
+function px(ctx,x,y,c,a=1,s=1){
+  if(a<=0)return;
+  ctx.fillStyle=rgb(c,a);
+  ctx.fillRect(Math.round(x),Math.round(y),Math.max(1,Math.round(s)),Math.max(1,Math.round(s)));
+}
+
+/* ---------------------- IndexedDB ---------------------- */
+const DB = {
+  db:null,
+  async open(){
+    if(this.db)return this.db;
+    return new Promise((resolve,reject)=>{
+      const r=indexedDB.open("ambient-present",1);
+      r.onupgradeneeded=()=>{
+        const db=r.result;
+        if(!db.objectStoreNames.contains("notes")) db.createObjectStore("notes",{keyPath:"id"});
+      };
+      r.onsuccess=()=>{this.db=r.result;resolve(this.db)};
+      r.onerror=()=>reject(r.error);
+    });
+  },
+  async put(note){
+    const db=await this.open();
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction("notes","readwrite");
+      tx.objectStore("notes").put(note);
+      tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
+    });
+  },
+  async all(){
+    const db=await this.open();
+    return new Promise((resolve,reject)=>{
+      const r=db.transaction("notes","readonly").objectStore("notes").getAll();
+      r.onsuccess=()=>resolve((r.result||[]).sort((a,b)=>b.ts-a.ts));
+      r.onerror=()=>reject(r.error);
+    });
+  },
+  async del(id){
+    const db=await this.open();
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction("notes","readwrite");
+      tx.objectStore("notes").delete(id);
+      tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
+    });
+  }
+};
+
+/* ---------------------- permission ---------------------- */
+function legacyMic(constraints){
+  const fn=navigator.getUserMedia||navigator.webkitGetUserMedia||navigator.mozGetUserMedia;
+  if(!fn)return Promise.reject(new Error("unsupported"));
+  return new Promise((resolve,reject)=>fn.call(navigator,constraints,resolve,reject));
+}
+function getMic(){
+  if(navigator.mediaDevices?.getUserMedia){
+    return navigator.mediaDevices.getUserMedia({
+      audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}
+    });
+  }
+  return legacyMic({audio:true});
+}
+
+async function ensureAudio(){
+  if(S.ac)return;
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC)throw new Error("no audio context");
+  S.ac=new AC();
+  try{await S.ac.resume()}catch(_){}
+  S.sampleRate=S.ac.sampleRate;
+}
+
+async function beginListening(){
+  try{
+    await ensureAudio();
+    const stream=await getMic();
+    S.stream=stream;
+
+    const src=S.ac.createMediaStreamSource(stream);
+    const analyser=S.ac.createAnalyser();
+    analyser.fftSize=256;
+    analyser.smoothingTimeConstant=.86;
+    src.connect(analyser);
+
+    S.analyser=analyser;
+    S.data=new Uint8Array(analyser.frequencyBinCount);
+
+    // bounded PCM ring: never persisted until explicit keep
+    S.ring=new Float32Array(Math.floor(S.sampleRate*WINDOW_MS/1000));
+    S.head=0;S.filled=0;
+
+    const Proc=S.ac.createScriptProcessor ? S.ac.createScriptProcessor(2048,1,1) : null;
+    if(Proc){
+      Proc.onaudioprocess=e=>{
+        const d=e.inputBuffer.getChannelData(0);
+        let sum=0;
+        for(let i=0;i<d.length;i++){
+          const v=d[i];
+          S.ring[S.head]=v;
+          S.head=(S.head+1)%S.ring.length;
+          S.filled=Math.min(S.ring.length,S.filled+1);
+          sum+=v*v;
+        }
+        S.activity=Math.min(1,Math.sqrt(sum/d.length)*9);
+      };
+      const mute=S.ac.createGain();mute.gain.value=0;
+      src.connect(Proc);Proc.connect(mute);mute.connect(S.ac.destination);
+      S.processor=Proc;
+    }
+
+    S.mode="live";
+    S.synthetic=false;
+    S.transitionAt=performance.now();
+    startRecognition();
+    requestWakeLock();
+    closePermission();
+    announce("Listening.");
+  }catch(err){
+    S.mode="fault";
+    S.transitionAt=performance.now();
+    announce("Microphone access unavailable. Choose watch only or change site microphone permission.");
+    if(navigator.vibrate)navigator.vibrate([15,60,15]);
+  }
+}
+
+async function beginSynthetic(){
+  try{await ensureAudio()}catch(_){}
+  S.synthetic=true;
+  S.mode="live";
+  S.transitionAt=performance.now();
+  closePermission();
+  announce("Watch-only simulation.");
+}
+
+document.getElementById("listen").addEventListener("click",beginListening);
+document.getElementById("watch").addEventListener("click",beginSynthetic);
+try{permit.showModal()}catch(_){permit.setAttribute("open","")}
+
+function closePermission(){
+  try{permit.close()}catch(_){permit.removeAttribute("open")}
+}
+
+/* Permission animation uses the same grammar as the live field. */
+function drawPermission(t){
+  clear(pg);
+  const cx=GRID*.5,cy=GRID*.42;
+  const k=(Math.sin(t*.0012)+1)*.5;
+  const n=GRID<=16?7:13;
+
+  for(let i=0;i<n;i++){
+    const a=i/n*Math.PI*2;
+    const r=GRID*.10 + (i%3)*GRID*.018;
+    const q=.80+.08*Math.sin(t*.0007+i*1.7);
+    px(pg,cx+Math.cos(a)*r*q,cy+Math.sin(a)*r*.75*q,C.amber,.18+k*.08,1);
+  }
+  px(pg,cx,cy,C.gold,.58+k*.18,GRID<=16?1:2);
+}
+
+/* ---------------------- microphone + semantics ---------------------- */
+function updateActivity(){
+  if(S.synthetic){
+    const t=performance.now();
+    const phrase=(Math.sin(t/1250)+Math.sin(t/417)*.32+1.25)/2.57;
+    S.activity=Math.max(0,phrase-.28)*1.35;
+  }else if(S.analyser && !S.processor){
+    S.analyser.getByteFrequencyData(S.data);
+    let sum=0,n=Math.min(44,S.data.length);
+    for(let i=2;i<n;i++)sum+=S.data[i];
+    S.activity=sum/n/255;
+  }
+  S.smooth+=(S.activity-S.smooth)*.065;
+}
+
+function startRecognition(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR)return;
+  try{
+    const r=new SR();
+    r.continuous=true;r.interimResults=true;r.lang="en-US";
+    S.recognizer=r;S.recognizerWanted=true;
+
+    r.onresult=e=>{
+      const now=Date.now();
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        const res=e.results[i],text=res[0].transcript.trim();
+        if(!text)continue;
+        S.words=S.words.filter(w=>!w.interim);
+        S.words.push({t:now,text,interim:!res.isFinal});
+      }
+    };
+    r.onend=()=>{
+      if(S.recognizerWanted&&S.stream){
+        setTimeout(()=>{try{r.start()}catch(_){}},250);
+      }
+    };
+    r.start();
+  }catch(_){}
+}
+
+/* ---------------------- temporal cells ---------------------- */
+function deposit(now){
+  const speaking=Math.max(0,Math.min(1,(S.smooth-.025)/.20));
+  const coherence=.16+speaking*.80;
+
+  S.marks.push({
+    born:now,
+    speaking,
+    coherence,
+    a:S.phase+(Math.random()-.5)*(1.9-coherence*1.55),
+    r:GRID*(.11+Math.random()*(.25-coherence*.09)),
+    seed:Math.random()
+  });
+  S.lastSample=now;
+}
+
+function prune(now){
+  S.marks=S.marks.filter(m=>now-m.born<=WINDOW_MS);
+  S.words=S.words.filter(w=>now-w.t<=WINDOW_MS+5000);
+}
+
+function markPos(m,now,mode=S.mode){
+  const age=Math.max(0,Math.min(1,(now-m.born)/WINDOW_MS));
+  const cx=GRID*.5,cy=GRID*.47;
+
+  let a=m.a+age*.18;
+  let r=m.r+age*GRID*.075;
+  let x=cx+Math.cos(a)*r-age*GRID*.115;
+  let y=cy+Math.sin(a)*r*.76;
+
+  if(mode==="recall"){
+    x+=(1-age)*GRID*.055;
+  }
+  return{x,y,age};
+}
+
+function drawLive(now){
+  clear(g);
+  const cx=GRID*.5,cy=GRID*.47;
+
+  for(const m of S.marks){
+    const p=markPos(m,now,"live");
+    const life=Math.pow(1-p.age,.63);
+    let col=mix(C.dim,C.amber,1-p.age);
+    col=mix(col,C.cream,m.speaking*.70);
+
+    const a=life*(.16+m.speaking*.80);
+    const s=(GRID>=48&&m.speaking>.62)?2:1;
+    px(g,p.x,p.y,col,a,s);
+
+    // Heard speech creates agreement, not frenzy.
+    if(m.speaking>.36 && p.age<.72){
+      const q=.10+m.speaking*.22;
+      px(g,p.x+(cx-p.x)*q,p.y+(cy-p.y)*q,C.cream,a*.42,1);
+    }
+  }
+
+  // One datum for the immediate present.
+  px(g,cx,cy,C.cream,.36+S.smooth*.62,S.smooth>.16&&GRID>=32?2:1);
+
+  // Kept moments are visible as distant, stable neighbors.
+  if(S.archive.length){
+    const max=Math.min(3,S.archive.length);
+    for(let i=0;i<max;i++){
+      const note=S.archive[i];
+      const side=i%2?1:-1;
+      const x=cx+side*(GRID*.34 + Math.floor(i/2)*GRID*.04);
+      const y=cy+((i%3)-1)*GRID*.11;
+      drawMini(note,x,y,GRID*.055,.22-(i*.04));
+    }
+  }
+}
+
+function drawRecall(now){
+  clear(g);
+  const cx=GRID*.5,cy=GRID*.47;
+
+  for(const m of S.marks){
+    const p=markPos(m,now,"recall");
+    const life=Math.pow(1-p.age,.55);
+    let col=mix(C.dim,C.gold,1-p.age);
+    col=mix(col,C.cream,.18+m.speaking*.55);
+    px(g,p.x,p.y,col,life*(.28+m.speaking*.66),m.speaking>.55&&GRID>=48?2:1);
+  }
+
+  // The recent past comes forward as a data-derived skin.
+  const recent=S.marks.filter(m=>now-m.born<WINDOW_MS*.48);
+  for(let i=0;i<recent.length;i+=Math.max(1,Math.floor(recent.length/36))){
+    const p=markPos(recent[i],now,"recall");
+    px(g,p.x+GRID*.045,p.y,C.cream,.62,1);
+  }
+
+  // long press feedback: selected form slowly settles rather than showing progress
+  if(S.pointer){
+    const held=(performance.now()-S.pointer.t0)/LONG_MS;
+    if(held>0){
+      const settle=Math.min(1,held);
+      for(let i=0;i<8;i++){
+        const a=i/8*Math.PI*2;
+        const r=GRID*(.23-.025*settle);
+        px(g,cx+Math.cos(a)*r,cy+Math.sin(a)*r*.75,C.amber,.06+.08*settle,1);
+      }
+    }
+  }
+}
+
+function drawMini(note,cx,cy,r,alpha=.35){
+  const pts=note?.shape||[];
+  if(!pts.length){px(g,cx,cy,C.amber,alpha,1);return}
+  const step=Math.max(1,Math.floor(pts.length/28));
+  for(let i=0;i<pts.length;i+=step){
+    const p=pts[i];
+    px(g,cx+(p.x-.5)*r*2,cy+(p.y-.5)*r*2,mix(C.amber,C.cream,p.v||.3),alpha,1);
+  }
+}
+
+function drawArchive(t){
+  clear(g);
+  if(!S.archive.length){S.mode="live";return}
+
+  const cx=GRID*.5,cy=GRID*.47;
+  const note=S.archive[S.archiveIndex];
+  const ageDays=Math.min(1,(Date.now()-note.ts)/(1000*60*60*24*30));
+
+  // central held object
+  const pts=note.shape||[];
+  for(const p of pts){
+    const x=cx+(p.x-.5)*GRID*.48;
+    const y=cy+(p.y-.5)*GRID*.38;
+    const col=mix(C.amber,C.cream,p.v||.25);
+    px(g,x,y,col,.58+(p.v||.2)*.3,GRID>=64&&p.v>.7?2:1);
+  }
+
+  // stability = persistence
+  const pulse=.5+.5*Math.sin(t*.00045);
+  for(let a=0;a<Math.PI*2;a+=GRID<=16?.65:.18){
+    px(g,cx+Math.cos(a)*GRID*.27,cy+Math.sin(a)*GRID*.20,C.amber,.10+.035*pulse,1);
+  }
+
+  // previous / next are spatially present, never tabs
+  if(S.archiveIndex>0) drawMini(S.archive[S.archiveIndex-1],GRID*.84,cy,GRID*.075,.28);
+  if(S.archiveIndex<S.archive.length-1) drawMini(S.archive[S.archiveIndex+1],GRID*.16,cy,GRID*.075,.20);
+
+  if(S.mode==="share"){
+    const k=Math.min(1,(performance.now()-S.transitionAt)/550);
+    // the held object lifts toward the device boundary
+    const yOff=-k*GRID*.30;
+    for(const p of pts){
+      px(g,cx+(p.x-.5)*GRID*.48,cy+(p.y-.5)*GRID*.38+yOff,C.cream,(1-k)*.4,1);
+    }
+  }
+
+  if(S.mode==="copy"){
+    const k=Math.min(1,(performance.now()-S.transitionAt)/600);
+    for(const p of pts){
+      const x=cx+(p.x-.5)*GRID*.48;
+      const y=cy+(p.y-.5)*GRID*.38;
+      px(g,x+GRID*.18*k,y,C.cream,(1-k)*.35,1);
+    }
+  }
+
+  if(S.mode==="delete"){
+    const k=Math.min(1,(performance.now()-S.transitionAt)/800);
+    for(let i=0;i<pts.length;i+=2){
+      const p=pts[i];
+      const x=cx+(p.x-.5)*GRID*.48 + Math.sin(i)*k*GRID*.06;
+      const y=cy+(p.y-.5)*GRID*.38 + k*GRID*.22;
+      px(g,x,y,C.red,(1-k)*.42,1);
+    }
+  }
+
+  // older notes fade by age only; the geometry stays stable
+  if(ageDays>.75){
+    for(let i=0;i<6;i++){
+      px(g,cx-GRID*.20+i*GRID*.08,cy+GRID*.28,C.dim,.12,1);
+    }
+  }
+}
+
+function drawFault(t){
+  clear(g);
+  const cx=GRID*.5,cy=GRID*.47;
+  for(let i=0;i<14;i++){
+    const a=i/14*Math.PI*2;
+    const split=Math.cos(a)>0?GRID*.05:-GRID*.05;
+    px(g,cx+Math.cos(a)*GRID*.16+split,cy+Math.sin(a)*GRID*.11,C.red,.22,1);
+  }
+}
+
+/* ---------------------- selected moment ---------------------- */
+function snapshotAudio(){
+  if(!S.ring||!S.filled)return null;
+  const out=new Float32Array(S.filled);
+  const start=(S.head-S.filled+S.ring.length)%S.ring.length;
+  for(let i=0;i<S.filled;i++)out[i]=S.ring[(start+i)%S.ring.length];
+  return out;
+}
+
+function selectedText(){
+  const now=Date.now();
+  return S.words.filter(w=>now-w.t<=WINDOW_MS).map(w=>w.text).join(" ").trim();
+}
+
+function snapshotShape(now){
+  const pts=[];
+  const marks=S.marks.slice(-Math.min(320,S.marks.length));
+  if(!marks.length)return pts;
+  for(const m of marks){
+    const p=markPos(m,now,"recall");
+    pts.push({
+      x:Math.max(0,Math.min(1,p.x/GRID)),
+      y:Math.max(0,Math.min(1,p.y/GRID)),
+      v:m.speaking
+    });
+  }
+  return pts;
+}
+
+function pcmToWav(samples,rate){
+  if(!samples||!samples.length)return null;
+  const ab=new ArrayBuffer(44+samples.length*2);
+  const v=new DataView(ab);
+  const w=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};
+  w(0,"RIFF");v.setUint32(4,36+samples.length*2,true);w(8,"WAVE");
+  w(12,"fmt ");v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);
+  w(36,"data");v.setUint32(40,samples.length*2,true);
+  let o=44;
+  for(let i=0;i<samples.length;i++,o+=2){
+    const s=Math.max(-1,Math.min(1,samples[i]));
+    v.setInt16(o,s<0?s*0x8000:s*0x7fff,true);
+  }
+  return new Blob([ab],{type:"audio/wav"});
+}
+
+function recall(){
+  if(S.mode!=="live")return;
+  const now=Date.now();
+  S.selected={
+    ts:Date.now(),
+    text:selectedText(),
+    audio:snapshotAudio(),
+    shape:snapshotShape(now)
+  };
+  S.mode="recall";S.transitionAt=performance.now();
+  if(navigator.vibrate)navigator.vibrate([10,28,10]);
+}
+
+async function keepSelected(){
+  if(!S.selected)return;
+  const note={
+    id:(crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`),
+    ts:S.selected.ts,
+    text:S.selected.text,
+    shape:S.selected.shape,
+    audio:pcmToWav(S.selected.audio,S.sampleRate)
+  };
+  try{
+    await DB.put(note);
+    S.archive=await DB.all();
+    S.archiveIndex=0;
+    S.mode="archive";
+    S.transitionAt=performance.now();
+    announce("Moment kept.");
+    if(navigator.vibrate)navigator.vibrate(42);
+  }catch(_){
+    S.mode="fault";S.transitionAt=performance.now();
+    announce("Could not keep moment.");
+  }
+}
+
+async function shareCurrent(){
+  const note=S.archive[S.archiveIndex];
+  if(!note)return;
+  S.mode="share";S.transitionAt=performance.now();
+  if(navigator.vibrate)navigator.vibrate([8,35,8]);
+
+  const files=[];
+  if(note.audio){
+    try{files.push(new File([note.audio],"ambient-present.wav",{type:"audio/wav"}))}catch(_){}
+  }
+  const data={};
+  if(note.text)data.text=note.text;
+  if(files.length && navigator.canShare?.({files}))data.files=files;
+
+  setTimeout(async()=>{
+    try{
+      if(navigator.share) await navigator.share(data);
+      else if(note.text) await navigator.clipboard.writeText(note.text);
+    }catch(_){}
+    S.mode="archive";S.transitionAt=performance.now();
+  },520);
+}
+
+async function copyCurrent(){
+  const note=S.archive[S.archiveIndex];
+  if(!note?.text)return;
+  S.mode="copy";S.transitionAt=performance.now();
+  try{await navigator.clipboard.writeText(note.text)}catch(_){}
+  if(navigator.vibrate)navigator.vibrate(14);
+  setTimeout(()=>{S.mode="archive";S.transitionAt=performance.now()},600);
+}
+
+async function deleteCurrent(){
+  const note=S.archive[S.archiveIndex];
+  if(!note)return;
+  S.mode="delete";S.transitionAt=performance.now();
+  if(navigator.vibrate)navigator.vibrate([5,30,4,45,3]);
+  setTimeout(async()=>{
+    try{await DB.del(note.id)}catch(_){}
+    S.archive=await DB.all();
+    S.archiveIndex=Math.min(S.archiveIndex,Math.max(0,S.archive.length-1));
+    S.mode=S.archive.length?"archive":"live";
+    S.transitionAt=performance.now();
+  },800);
+}
+
+/* ---------------------- gestures ---------------------- */
+function point(e){
+  const r=field.getBoundingClientRect();
+  return{x:(e.clientX-r.left)/r.width*GRID,y:(e.clientY-r.top)/r.height*GRID};
+}
+
+field.addEventListener("pointerdown",e=>{
+  const p=point(e);
+  S.pointer={id:e.pointerId,x0:p.x,y0:p.y,x:p.x,y:p.y,t0:performance.now(),long:false};
+  field.setPointerCapture(e.pointerId);
+});
+
+field.addEventListener("pointermove",e=>{
+  if(!S.pointer||S.pointer.id!==e.pointerId)return;
+  const p=point(e);S.pointer.x=p.x;S.pointer.y=p.y;
+  if(S.mode==="recall"&&!S.pointer.long&&performance.now()-S.pointer.t0>=LONG_MS){
+    S.pointer.long=true;
+    keepSelected();
+  }
+});
+
+field.addEventListener("pointerup",e=>{
+  if(!S.pointer||S.pointer.id!==e.pointerId)return;
+  const p=point(e);
+  const dx=p.x-S.pointer.x0,dy=p.y-S.pointer.y0;
+  const dist=Math.hypot(dx,dy),dur=performance.now()-S.pointer.t0;
+  const now=performance.now();
+  const doubleTap=now-S.tapAt<360 && dist<4;
+  S.tapAt=now;
+
+  if(S.mode==="live"){
+    if(Math.abs(dx)>SWIPE && Math.abs(dx)>Math.abs(dy) && S.archive.length){
+      S.mode="archive";S.archiveIndex=0;S.transitionAt=performance.now();
+    }else if(dur<430&&dist<5){
+      recall();
+    }
+  }else if(S.mode==="recall"){
+    if(!S.pointer.long){
+      if(dy>SWIPE && Math.abs(dy)>Math.abs(dx)){
+        S.selected=null;S.mode="live";S.transitionAt=performance.now();
+      }else if(dur<430&&dist<5){
+        S.selected=null;S.mode="live";S.transitionAt=performance.now();
+      }
+    }
+  }else if(S.mode==="archive"){
+    if(doubleTap){
+      copyCurrent();
+    }else if(Math.abs(dx)>SWIPE && Math.abs(dx)>Math.abs(dy)){
+      if(dx<0)S.archiveIndex=Math.min(S.archive.length-1,S.archiveIndex+1);
+      else S.archiveIndex=Math.max(0,S.archiveIndex-1);
+      S.transitionAt=performance.now();
+      if(navigator.vibrate)navigator.vibrate(7);
+    }else if(dy<-SWIPE && Math.abs(dy)>Math.abs(dx)){
+      shareCurrent();
+    }else if(dy>SWIPE && Math.abs(dy)>Math.abs(dx)){
+      deleteCurrent();
+    }else if(dur<430&&dist<5){
+      S.mode="live";S.transitionAt=performance.now();
+    }
+  }
+  S.pointer=null;
+});
+
+/* ---------------------- table behavior ---------------------- */
+async function requestWakeLock(){
+  try{
+    if("wakeLock" in navigator)S.wake=await navigator.wakeLock.request("screen");
+  }catch(_){}
+}
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="visible"&&S.stream)requestWakeLock();
+});
+
+/* ---------------------- loop ---------------------- */
+let last=performance.now();
+function loop(t){
+  const now=Date.now();
+  const dt=Math.min(50,t-last);last=t;
+
+  drawPermission(t);
+
+  updateActivity();
+
+  if(S.mode==="live"||S.mode==="recall"){
+    if(now-S.lastSample>=SAMPLE_MS)deposit(now);
+    prune(now);
+    const settle=1-Math.min(.78,S.smooth*2.5);
+    S.phase+=dt*.000038*settle;
+  }
+
+  if(S.mode==="live")drawLive(now);
+  else if(S.mode==="recall")drawRecall(now);
+  else if(["archive","share","copy","delete"].includes(S.mode))drawArchive(t);
+  else if(S.mode==="fault")drawFault(t);
+  else clear(g);
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* Load kept moments before the first browse gesture. */
+DB.all().then(notes=>S.archive=notes).catch(()=>{});
+
+addEventListener("beforeunload",()=>{
+  S.recognizerWanted=false;
+  try{S.recognizer?.stop()}catch(_){}
+  try{S.processor?.disconnect()}catch(_){}
+  S.stream?.getTracks().forEach(t=>t.stop());
+});
+
+})();
+</script>
+</body>
+</html>
