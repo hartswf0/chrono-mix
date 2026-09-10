@@ -1,0 +1,610 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#090806">
+<title>HEARD — bounded temporal field</title>
+<style>
+  :root{
+    --bg:#090806;
+    --amber:#f0b44b;
+    --cream:#fff0bd;
+    --red:#d84a20;
+  }
+  *{box-sizing:border-box}
+  html,body{
+    margin:0;
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    background:var(--bg);
+    color:var(--cream);
+    font-family:"Courier New",Courier,monospace;
+    -webkit-tap-highlight-color:transparent;
+    touch-action:none;
+  }
+  body{display:grid;place-items:center}
+  #frame{
+    position:relative;
+    width:100vw;
+    height:100dvh;
+    min-height:100svh;
+    overflow:hidden;
+    background:var(--bg);
+  }
+  canvas{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    image-rendering:pixelated;
+    image-rendering:crisp-edges;
+  }
+  #gate{
+    position:absolute;
+    inset:0;
+    display:grid;
+    place-items:center;
+    padding:10vw;
+    background:var(--bg);
+    z-index:5;
+    text-align:center;
+  }
+  #gate.hidden{display:none}
+  #gate button{
+    border:0;
+    background:transparent;
+    color:var(--cream);
+    font:inherit;
+    letter-spacing:.22em;
+    font-size:14px;
+    padding:22px;
+  }
+  #gate p{
+    margin:10px 0 0;
+    max-width:26em;
+    opacity:.55;
+    font-size:11px;
+    line-height:1.45;
+    letter-spacing:.08em;
+  }
+  #caption{
+    position:absolute;
+    left:0; right:0;
+    bottom:max(16px,env(safe-area-inset-bottom));
+    text-align:center;
+    font-size:10px;
+    letter-spacing:.24em;
+    opacity:.62;
+    pointer-events:none;
+    z-index:3;
+  }
+  #caption:empty{display:none}
+  #transcript{
+    position:absolute;
+    left:8vw; right:8vw;
+    top:50%;
+    transform:translateY(-50%);
+    z-index:3;
+    text-align:center;
+    font-family:Georgia,serif;
+    font-size:clamp(24px,7vw,42px);
+    line-height:1.08;
+    letter-spacing:-.02em;
+    color:var(--cream);
+    display:none;
+    pointer-events:none;
+    text-wrap:balance;
+  }
+  #transcript.show{display:block}
+  @media (min-width:700px){
+    body{background:#111}
+    #frame{
+      width:390px;height:844px;min-height:0;
+      box-shadow:0 0 0 10px #171513,0 25px 80px #000;
+    }
+  }
+  @media (prefers-reduced-motion:reduce){
+    canvas{filter:none}
+  }
+</style>
+</head>
+<body>
+<div id="frame">
+  <canvas id="view" aria-label="A bounded field of recent conversational time"></canvas>
+
+  <div id="gate">
+    <div>
+      <button id="begin" type="button">TOUCH TO BEGIN</button>
+      <p>
+        One gesture is required by the browser to open the microphone.
+        After that, the field can remain on the table.
+      </p>
+    </div>
+  </div>
+
+  <div id="transcript"></div>
+  <div id="caption"></div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  /* -----------------------------------------------------------
+     HEARD
+     A bounded temporal field.
+
+     The screen is not a meter.
+     It is the current state of recent time.
+
+     INVARIANTS
+     1. Every visible mark has temporal identity.
+     2. No live mark survives beyond WINDOW_MS unless explicitly held.
+     3. Speech increases coherence instead of agitation.
+     4. Recall transforms the same field; it does not open another UI.
+     5. Hold stabilizes. Release dissolves. Absence leaves no hidden mark.
+     6. Rendering works from a tiny logical grid upward.
+  ----------------------------------------------------------- */
+
+  const WINDOW_MS = 15000;
+  const GRID = 64;                  // change to 32 for very small hardware
+  const SAMPLE_MS = 180;            // each new mark is a real slice of time
+  const HOLD_MS = 750;
+  const RETURN_MS = 11000;
+
+  const canvas = document.getElementById("view");
+  const ctx = canvas.getContext("2d", { alpha:false });
+  const gate = document.getElementById("gate");
+  const beginBtn = document.getElementById("begin");
+  const caption = document.getElementById("caption");
+  const transcriptEl = document.getElementById("transcript");
+
+  const state = {
+    mode:"quiet",                    // quiet | listening | recall | held | fault
+    stream:null,
+    audio:null,
+    analyser:null,
+    data:null,
+    energy:0,
+    smoothEnergy:0,
+    marks:[],
+    held:null,
+    lastSample:0,
+    pointerDownAt:0,
+    pointerId:null,
+    returnTimer:null,
+    recognition:null,
+    recognitionWanted:false,
+    words:[],
+    lastFrame:performance.now(),
+    phase:0
+  };
+
+  /* ---------- color is semantic, not decorative ---------- */
+
+  const COLORS = {
+    bg:[9,8,6],
+    old:[112,79,39],
+    live:[240,180,75],
+    heard:[255,240,189],
+    edge:[216,74,32]
+  };
+
+  function rgb(c,a=1){
+    return `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+  }
+  function mix(a,b,t){
+    return [
+      a[0]+(b[0]-a[0])*t,
+      a[1]+(b[1]-a[1])*t,
+      a[2]+(b[2]-a[2])*t
+    ];
+  }
+
+  /* ---------- logical pixel surface ---------- */
+
+  function resize(){
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    canvas.width = GRID * dpr;
+    canvas.height = GRID * dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.imageSmoothingEnabled = false;
+  }
+  resize();
+  addEventListener("resize", resize);
+
+  function clear(){
+    ctx.fillStyle = rgb(COLORS.bg);
+    ctx.fillRect(0,0,GRID,GRID);
+  }
+
+  function px(x,y,color,alpha=1,size=1){
+    ctx.fillStyle = rgb(color,alpha);
+    ctx.fillRect(Math.round(x),Math.round(y),size,size);
+  }
+
+  /* ---------- microphone ---------- */
+
+  async function begin(){
+    try{
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio:{
+          echoCancellation:true,
+          noiseSuppression:true,
+          autoGainControl:true
+        }
+      });
+
+      const AC = window.AudioContext || window.webkitAudioContext;
+      const audio = new AC();
+      const src = audio.createMediaStreamSource(stream);
+      const analyser = audio.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = .82;
+      src.connect(analyser);
+
+      state.stream = stream;
+      state.audio = audio;
+      state.analyser = analyser;
+      state.data = new Uint8Array(analyser.frequencyBinCount);
+      state.mode = "listening";
+
+      gate.classList.add("hidden");
+      caption.textContent = "";
+      startRecognition();
+      requestWakeLock();
+    } catch(e){
+      state.mode = "fault";
+      caption.textContent = "MICROPHONE UNAVAILABLE";
+    }
+  }
+
+  beginBtn.addEventListener("click", begin);
+
+  function updateEnergy(){
+    if(!state.analyser) return;
+    state.analyser.getByteFrequencyData(state.data);
+    let sum = 0;
+    const n = Math.min(48, state.data.length);
+    for(let i=2;i<n;i++) sum += state.data[i];
+    const raw = sum / n / 255;
+    state.energy = raw;
+    state.smoothEnergy += (raw - state.smoothEnergy) * .08;
+  }
+
+  /* ---------- speech text is secondary and late ---------- */
+
+  function startRecognition(){
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if(!SR) return;
+
+    try{
+      const r = new SR();
+      r.continuous = true;
+      r.interimResults = true;
+      r.lang = "en-US";
+      state.recognition = r;
+      state.recognitionWanted = true;
+
+      r.onresult = e => {
+        const now = Date.now();
+
+        for(let i=e.resultIndex;i<e.results.length;i++){
+          const result = e.results[i];
+          const text = result[0].transcript.trim();
+          if(!text) continue;
+
+          state.words = state.words.filter(w => !w.interim);
+          state.words.push({
+            t:now,
+            text,
+            interim:!result.isFinal
+          });
+        }
+      };
+
+      r.onend = () => {
+        if(state.recognitionWanted && state.stream){
+          setTimeout(() => { try{ r.start(); }catch(_){} }, 250);
+        }
+      };
+
+      r.start();
+    }catch(_){}
+  }
+
+  /* ---------- time cells ---------- */
+
+  function addMark(now){
+    const e = state.smoothEnergy;
+
+    // Speech makes the field more coherent: less jitter, more common form.
+    const speaking = Math.max(0, Math.min(1, (e - .035) / .22));
+    const coherence = .22 + speaking * .72;
+
+    const ageSeed = Math.random();
+    const angle = state.phase + (Math.random()-.5) * (1.7 - coherence * 1.25);
+    const radius = 7 + Math.random() * 16 * (1 - coherence*.45);
+
+    state.marks.push({
+      born:now,
+      e,
+      speaking,
+      coherence,
+      angle,
+      radius,
+      seed:ageSeed
+    });
+
+    state.lastSample = now;
+  }
+
+  function prune(now){
+    state.marks = state.marks.filter(m => now - m.born <= WINDOW_MS);
+    state.words = state.words.filter(w => now - w.t <= WINDOW_MS + 5000);
+  }
+
+  /* ---------- one field, multiple transformations ---------- */
+
+  function markPosition(m, now){
+    const age = Math.max(0, Math.min(1, (now - m.born) / WINDOW_MS));
+
+    // New time enters near the right/lit side, older time drifts left and outward.
+    const centerX = GRID * .50;
+    const centerY = GRID * .47;
+
+    const theta = m.angle + age * .30;
+    const radialAge = age * 6.5;
+
+    let x = centerX + Math.cos(theta) * (m.radius + radialAge);
+    let y = centerY + Math.sin(theta) * (m.radius + radialAge) * .76;
+
+    // Temporal position is not an angle around a clock.
+    // Age shifts the whole mark gradually through the field.
+    x -= age * 8.5;
+
+    if(state.mode === "recall"){
+      // Recent history comes forward as spatial separation.
+      const recent = 1 - age;
+      x += recent * 2.5;
+      y += Math.sin(theta*2) * recent * 1.2;
+    }
+
+    if(state.mode === "held"){
+      // Held state stabilizes: phase stops contributing visible drift.
+      x = centerX + Math.cos(m.angle) * (m.radius + age*2) - age*4;
+      y = centerY + Math.sin(m.angle) * (m.radius + age*2) * .76;
+    }
+
+    return {x,y,age};
+  }
+
+  function drawField(now, dt){
+    clear();
+
+    const cx = GRID*.50;
+    const cy = GRID*.47;
+
+    // only the data-bearing axis; it is a shared present, not a timeline meter
+    for(let x=8;x<GRID-8;x++){
+      if((x+Math.floor(state.phase*10))%3===0){
+        const c = x < cx ? COLORS.old : COLORS.live;
+        px(x,cy,c,.20,1);
+      }
+    }
+
+    // faint vertical correspondence axis
+    for(let y=11;y<GRID-13;y+=3){
+      px(cx,y,COLORS.old,.13,1);
+    }
+
+    // render temporal cells
+    const marks = state.mode==="held" && state.held ? state.held : state.marks;
+
+    for(const m of marks){
+      const p = markPosition(m, now);
+      const age = p.age;
+
+      // Older marks literally lose visual attachment before being removed.
+      const life = Math.pow(1-age, .55);
+      const voice = m.speaking;
+
+      let color = mix(COLORS.old, COLORS.live, 1-age);
+      color = mix(color, COLORS.heard, voice*.65);
+
+      if(state.mode==="recall"){
+        color = mix(color, COLORS.heard, .25 + (1-age)*.30);
+      }
+
+      const alpha = Math.max(0, life * (.25 + voice*.72));
+      const size = voice > .56 && GRID>=48 ? 2 : 1;
+
+      px(p.x,p.y,color,alpha,size);
+
+      // Strong speech binds nearby moments into visible continuity.
+      if(voice>.30 && age<.78){
+        const toward = .14 + voice*.26;
+        const x2 = p.x + (cx-p.x)*toward;
+        const y2 = p.y + (cy-p.y)*toward;
+        px(x2,y2,COLORS.heard,alpha*.52,1);
+      }
+    }
+
+    // center: attention, not record status
+    const cPulse = .35 + state.smoothEnergy*.65;
+    px(cx,cy,COLORS.heard,Math.min(.92,cPulse), state.smoothEnergy>.12 ? 2 : 1);
+
+    // mode is shown by geometry
+    if(state.mode==="recall"){
+      // recent past becomes an offset skin
+      for(let y=18;y<46;y+=2){
+        const yy=(y-cy)/13;
+        const x=cx+Math.sqrt(Math.max(0,1-yy*yy))*15;
+        px(x+2,y,COLORS.heard,.68,1);
+      }
+    }
+
+    if(state.mode==="held"){
+      // stable boundary: persistence as enclosure, not a lock/check icon
+      for(let a=0;a<Math.PI*2;a+=.11){
+        const x=cx+Math.cos(a)*19;
+        const y=cy+Math.sin(a)*14.5;
+        px(x,y,COLORS.live,.38,1);
+      }
+    }
+
+    // fault loses coherence instead of becoming conventional error chrome
+    if(state.mode==="fault"){
+      for(let i=0;i<22;i++){
+        px(12+Math.random()*40,18+Math.random()*28,COLORS.edge,.45,1);
+      }
+    }
+  }
+
+  /* ---------- interaction grammar ---------- */
+
+  function recall(){
+    if(!state.stream || state.mode==="fault") return;
+
+    state.mode = "recall";
+    const now = Date.now();
+    const recentText = state.words
+      .filter(w => now-w.t <= WINDOW_MS)
+      .map(w => w.text)
+      .join(" ")
+      .trim();
+
+    transcriptEl.textContent = recentText;
+    transcriptEl.classList.toggle("show", !!recentText);
+
+    caption.textContent = recentText ? "" : "RECENT PAST IN VIEW";
+
+    clearTimeout(state.returnTimer);
+    state.returnTimer = setTimeout(returnToListening, RETURN_MS);
+
+    if(navigator.vibrate) navigator.vibrate([12,28,12]);
+  }
+
+  function hold(){
+    if(state.mode!=="recall") return;
+    const now = Date.now();
+
+    state.held = state.marks.map(m => ({...m}));
+    state.mode = "held";
+
+    transcriptEl.classList.remove("show");
+    caption.textContent = "HELD";
+
+    clearTimeout(state.returnTimer);
+    if(navigator.vibrate) navigator.vibrate(22);
+  }
+
+  function release(){
+    if(state.mode!=="held") return;
+
+    state.held = null;
+    state.mode = "listening";
+    caption.textContent = "";
+    transcriptEl.classList.remove("show");
+
+    if(navigator.vibrate) navigator.vibrate(10);
+  }
+
+  function returnToListening(){
+    if(state.mode==="held") return;
+    state.mode = "listening";
+    transcriptEl.classList.remove("show");
+    caption.textContent = "";
+  }
+
+  function clearRecent(){
+    state.marks = [];
+    state.words = [];
+    state.held = null;
+    state.mode = "listening";
+    transcriptEl.classList.remove("show");
+    caption.textContent = "";
+  }
+
+  canvas.addEventListener("pointerdown", e => {
+    state.pointerDownAt = performance.now();
+    state.pointerId = e.pointerId;
+    canvas.setPointerCapture(e.pointerId);
+  });
+
+  canvas.addEventListener("pointerup", e => {
+    if(e.pointerId!==state.pointerId) return;
+    const heldFor = performance.now() - state.pointerDownAt;
+
+    if(state.mode==="listening"){
+      recall();
+    }else if(state.mode==="recall"){
+      if(heldFor >= HOLD_MS) hold();
+      else returnToListening();
+    }else if(state.mode==="held"){
+      release();
+    }
+
+    state.pointerId = null;
+  });
+
+  // Two-finger touch means release/clear the explicitly held object.
+  let touchCount = 0;
+  canvas.addEventListener("touchstart", e => {
+    touchCount = e.touches.length;
+    if(touchCount>=2 && state.mode==="held"){
+      clearRecent();
+    }
+  }, {passive:true});
+
+  /* ---------- animation ---------- */
+
+  function frame(ts){
+    const now = Date.now();
+    const dt = Math.min(50, ts-state.lastFrame);
+    state.lastFrame = ts;
+
+    updateEnergy();
+
+    if(state.mode==="listening" || state.mode==="recall"){
+      if(now-state.lastSample >= SAMPLE_MS) addMark(now);
+      prune(now);
+
+      // Motion is slow enough for peripheral vision.
+      // Speech slightly reduces phase velocity: being heard settles the field.
+      const settle = 1 - Math.min(.72, state.smoothEnergy*2.3);
+      state.phase += dt * .000045 * settle;
+    }
+
+    drawField(now,dt);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  /* ---------- table behavior ---------- */
+
+  let wakeLock = null;
+  async function requestWakeLock(){
+    try{
+      if("wakeLock" in navigator){
+        wakeLock = await navigator.wakeLock.request("screen");
+      }
+    }catch(_){}
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if(document.visibilityState==="visible" && state.stream) requestWakeLock();
+  });
+
+  addEventListener("beforeunload", () => {
+    state.recognitionWanted = false;
+    try{ state.recognition?.stop(); }catch(_){}
+    state.stream?.getTracks().forEach(t=>t.stop());
+  });
+
+})();
+</script>
+</body>
+</html>
